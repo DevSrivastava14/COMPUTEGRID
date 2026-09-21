@@ -8,11 +8,13 @@ workers, and their status/results are stored persistently.
 
 ## Current Phase
 
-Day 1 — Project Foundation and Database Foundation
+Day 2 — FastAPI → PostgreSQL Integration
 
 ## Completed
 
-### Project Setup
+### Day 1 — Project Foundation and Database Foundation
+
+#### Project Setup
 - Created GitHub repository
 - Cloned repository locally
 - Created Python virtual environment
@@ -22,7 +24,7 @@ Day 1 — Project Foundation and Database Foundation
 - Verified local FastAPI server
 - Verified FastAPI Swagger documentation at `/docs`
 
-### PostgreSQL Setup
+#### PostgreSQL Setup
 - Installed PostgreSQL
 - Added PostgreSQL `bin` directory to Windows PATH
 - Verified `psql` CLI
@@ -30,7 +32,7 @@ Day 1 — Project Foundation and Database Foundation
 - Created `computegrid` database
 - Connected to `computegrid` using psql
 
-### Database Design
+#### Database Design
 - Designed initial `jobs` table
 - Created `jobs` table
 - Added primary key with auto-generated identity
@@ -41,16 +43,36 @@ Day 1 — Project Foundation and Database Foundation
 - Added error message field
 - Added job timestamps
 
-### Database Testing
+#### Database Testing
 - Successfully inserted first test job
 - Verified job appears in PostgreSQL
 - Verified default job status is `queued`
+
+### Day 2 — FastAPI → PostgreSQL Integration
+
+- Added SQLAlchemy 2.x and Psycopg 3 dependencies.
+- Added pydantic-settings configuration.
+- Created app/config.py.
+- Created local .env configuration and .env.example.
+- Confirmed .env is Git-ignored.
+- Created app/database.py.
+- Created SQLAlchemy engine using PostgreSQL + Psycopg.
+- Created SessionLocal.
+- Created get_db() FastAPI database session dependency.
+- Verified a real SELECT 1 query against the computegrid database.
+- Integrated get_db() with FastAPI.
+- Preserved GET /health.
+- Added GET /health/db.
+- Verified both endpoints return HTTP 200.
+- Verified FastAPI can obtain a live PostgreSQL session through dependency injection.
 
 ## Current Architecture
 
 Client
   ↓
 FastAPI
+  ↓
+SQLAlchemy/Psycopg
   ↓
 PostgreSQL
   ↓
@@ -90,17 +112,15 @@ QUEUED → RUNNING → FAILED
 
 ## Current Task
 
-Day 1 — Foundation completed.
+Day 2 — FastAPI → PostgreSQL Integration completed.
 
 ## Next Tasks
 
-1. Connect FastAPI to PostgreSQL
-2. Create database connection layer
-3. Create job model/schema
-4. Create job creation API
-5. Create job status API
-6. Introduce Redis queue
-7. Introduce worker process
+1. Create Job model / schema (SQLAlchemy & Pydantic)
+2. Create Job creation API
+3. Create Job status API
+4. Introduce Redis queue
+5. Introduce worker process
 
 ## Important Decisions
 
@@ -133,9 +153,10 @@ Run the application:
 
     uvicorn app.main:app --reload
 
-Health endpoint:
+Health endpoints:
 
     http://127.0.0.1:8000/health
+    http://127.0.0.1:8000/health/db
 
 API documentation:
 

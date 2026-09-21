@@ -1,9 +1,18 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-app = FastAPI(title = "ComputeGrid")
+from app.database import get_db
+
+app = FastAPI(title="ComputeGrid")
 
 
 @app.get("/health")
 def health_check():
-    return {"status" : "healthy"}
+    return {"status": "healthy"}
 
+
+@app.get("/health/db")
+def health_check_db(db: Session = Depends(get_db)):
+    db.execute(text("SELECT 1"))
+    return {"status": "healthy", "database": "connected"}
