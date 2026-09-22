@@ -8,7 +8,7 @@ workers, and their status/results are stored persistently.
 
 ## Current Phase
 
-Day 2 — FastAPI → PostgreSQL Integration
+Day 3 — Job Model and Pydantic Schemas
 
 ## Completed
 
@@ -66,6 +66,16 @@ Day 2 — FastAPI → PostgreSQL Integration
 - Verified both endpoints return HTTP 200.
 - Verified FastAPI can obtain a live PostgreSQL session through dependency injection.
 
+### Day 3 — Job Model and Pydantic Schemas
+
+- Inspected existing `jobs` table schema in PostgreSQL without modifying or altering database structure.
+- Created `app/models.py` with the SQLAlchemy `Job` ORM model mapped accurately to the existing `jobs` table using SQLAlchemy 2.0 type annotations (`Mapped`, `mapped_column`, `Identity`, `JSONB`, `DateTime(timezone=True)`).
+- Created `app/schemas.py` with Pydantic v2 schemas (`JobBase`, `JobCreate`, `JobResponse`).
+- Configured `JobResponse` with `model_config = ConfigDict(from_attributes=True)` for seamless ORM/object serialization.
+- Verified SQLAlchemy recognition and registration of `Job` model on `Base.metadata`.
+- Tested safe, read-only SELECT query against PostgreSQL `jobs` table using `Job` ORM model.
+- Tested and validated Pydantic serialization of database records using `JobResponse.model_validate()`.
+
 ## Current Architecture
 
 Client
@@ -112,15 +122,14 @@ QUEUED → RUNNING → FAILED
 
 ## Current Task
 
-Day 2 — FastAPI → PostgreSQL Integration completed.
+Day 3 — Job Model and Pydantic Schemas completed.
 
 ## Next Tasks
 
-1. Create Job model / schema (SQLAlchemy & Pydantic)
-2. Create Job creation API
-3. Create Job status API
-4. Introduce Redis queue
-5. Introduce worker process
+1. Day 4 — Job Creation API
+2. Job status API
+3. Introduce Redis queue
+4. Introduce worker process
 
 ## Important Decisions
 
