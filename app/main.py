@@ -3,8 +3,11 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.routers import jobs
 
 app = FastAPI(title="ComputeGrid")
+
+app.include_router(jobs.router)
 
 
 @app.get("/health")
