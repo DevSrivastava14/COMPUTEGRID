@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -21,3 +21,15 @@ def create_job(job_in: JobCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(job)
     return job
+
+
+@router.get("/{job_id}", response_model=JobResponse)
+def get_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found",
+        )
+    return job
+
