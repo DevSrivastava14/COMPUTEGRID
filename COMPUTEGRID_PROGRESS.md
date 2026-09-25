@@ -6,7 +6,7 @@ ComputeGrid is a distributed scientific computing platform where users submit co
 
 ## Current Phase
 
-Day 5 — Job Status API
+Day 6 — Redis Job Queue Integration
 
 ## Completed
 
@@ -178,93 +178,89 @@ Day 5 — Job Status API
 
 * Kept job retrieval synchronous and PostgreSQL-backed before introducing Redis and workers.
 
+### Day 6 — Redis Job Queue Integration
+
+* Added Python Redis client dependency (`redis>=5.0.0`, version 8.1.0 installed) to `requirements.txt`.
+
+* Extended `Settings` in `app/config.py` with `REDIS_HOST` (default `localhost`) and `REDIS_PORT` (default `6379`), and updated `.env.example`.
+
+* Created `app/redis_client.py` providing a reusable Redis client instance.
+
+* Added `GET /health/redis` endpoint to `app/main.py` executing a live Redis PING with `RedisError` handling.
+
+* Created `app/queue.py` with a Redis LIST queue abstraction using key `computegrid:jobs`:
+  * `enqueue_job()` pushes job IDs to the tail using `RPUSH`.
+  * `dequeue_job()` pops job IDs from the head using `LPOP` (FIFO).
+
+* Integrated `POST /jobs` in `app/routers/jobs.py` with the Redis job queue:
+  * PostgreSQL remains the persistent source of truth (committed and refreshed first).
+  * Redis receives only the integer job ID.
+  * Explicitly handles `RedisError` on enqueue failures.
+
+* Verified full integration:
+  * Successfully created and enqueued job ID 4 in live test.
+  * Verified PostgreSQL record persistence.
+  * Verified Redis key `computegrid:jobs` contained `['4']`.
+  * Verified FIFO queue mechanics and cleaned test queue data.
+  * Verified `GET /jobs/{job_id}`, `GET /health`, `GET /health/db`, and `GET /health/redis` return HTTP 200.
+
 ## Current Architecture
 
 Client
-
 ↓
-
 FastAPI
-
 ↓
-
-SQLAlchemy/Psycopg
-
+PostgreSQL (persistent job record)
 ↓
-
-PostgreSQL
-
+Redis Queue (job ID)
 ↓
+Worker
+↓
+Scientific Computation
+↓
+PostgreSQL (result/status)
 
-jobs table
-
-Current job creation flow:
+Current job creation and queuing flow:
 
 Client
-
 ↓
-
 `POST /jobs`
-
 ↓
-
-Pydantic validation
-
+Pydantic validation (`JobCreate`)
 ↓
-
 SQLAlchemy `Job`
-
 ↓
-
-PostgreSQL
-
+PostgreSQL Commit & Refresh (Source of Truth)
 ↓
-
-`JobResponse`
+Redis Enqueue (`computegrid:jobs` list, Job ID only)
+↓
+`JobResponse` (HTTP 201)
 
 Current job status retrieval flow:
 
 Client
-
 ↓
-
 `GET /jobs/{job_id}`
-
 ↓
-
-SQLAlchemy `Job`
-
+SQLAlchemy lookup by ID
 ↓
-
 PostgreSQL
-
 ↓
-
-`JobResponse`
+`JobResponse` (HTTP 200)
 
 Upcoming:
 
-FastAPI
-
+Worker Process
 ↓
-
-PostgreSQL
-
+Redis Dequeue (`LPOP computegrid:jobs`)
 ↓
-
-Redis Queue
-
+PostgreSQL Job Lookup
 ↓
-
-Worker
-
+Status update: `queued` → `running`
 ↓
-
 Scientific Computation
-
 ↓
-
-PostgreSQL
+Status update: `running` → `completed` / `failed`
 
 ## Current Database
 
@@ -286,25 +282,25 @@ or
 
 Current behavior:
 
-* Newly submitted jobs are stored with `queued` status.
+* Newly submitted jobs are stored in PostgreSQL with `queued` status and enqueued as IDs into Redis (`computegrid:jobs`).
 
-* Jobs are currently persisted but not yet processed by workers.
+* Individual jobs can be retrieved by their database ID through the API (`GET /jobs/{job_id}`).
 
-* Individual jobs can now be retrieved by their database ID through the API.
-
-* Redis queueing and worker processing will be introduced in later phases.
+* Worker execution and computational processing will be introduced in the next phase.
 
 ## Current Task
 
-Day 5 — Job Status API completed.
+Day 6 — Redis Job Queue Integration completed.
 
 ## Next Tasks
 
-1. Day 6 — Introduce Redis queue
+1. Day 7 — Worker:
+   * Introduce worker process
+   * Dequeue job IDs from Redis (`computegrid:jobs`)
+   * Look up job records in PostgreSQL
+   * Transition job status: `queued` → `running`
 
-2. Introduce worker process
-
-3. Connect queued jobs to scientific computation
+2. Connect queued jobs to scientific computation
 
 ## Important Decisions
 
@@ -312,21 +308,21 @@ Day 5 — Job Status API completed.
 
 * FastAPI provides the API layer.
 
-* PostgreSQL stores persistent job information.
+* PostgreSQL stores persistent job information and remains the permanent source of truth.
 
-* Redis will handle job queueing.
+* Redis handles lightweight job queueing (storing only integer job IDs).
 
-* Workers will execute computational jobs.
+* Queue key is `computegrid:jobs` using a Redis LIST with FIFO semantics (`RPUSH` / `LPOP`).
+
+* Workers will execute computational jobs asynchronously.
 
 * NumPy/Pandas will be used for scientific workloads.
 
-* Docker will be introduced later.
+* Docker is used for services like Redis (`computegrid-redis-stack`).
 
-* Redis is intentionally not being introduced until the basic API/database flow is working.
+* Job creation commits to PostgreSQL before enqueuing to Redis.
 
-* Job creation is handled synchronously by the API and persisted to PostgreSQL before Redis is introduced.
-
-* Job status retrieval is handled synchronously through PostgreSQL before Redis and worker processing are introduced.
+* Job status retrieval is handled synchronously through PostgreSQL.
 
 ## Known Issues
 
@@ -358,6 +354,7 @@ Health endpoints:
 ```text
 http://127.0.0.1:8000/health
 http://127.0.0.1:8000/health/db
+http://127.0.0.1:8000/health/redis
 ```
 
 API documentation:

@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Job
+from app.queue import enqueue_job
 from app.schemas import JobCreate, JobResponse
 
 router = APIRouter(
@@ -20,6 +22,15 @@ def create_job(job_in: JobCreate, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
     db.refresh(job)
+
+    try:
+        enqueue_job(job.id)
+    except RedisError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Job created in database but failed to enqueue in Redis",
+        )
+
     return job
 
 

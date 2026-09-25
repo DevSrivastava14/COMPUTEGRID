@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     DB_USER: str = "postgres"
     DB_PASSWORD: str = ""
 
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+
     @property
     def database_url(self) -> str:
         password = quote_plus(self.DB_PASSWORD) if self.DB_PASSWORD else ""
