@@ -2,389 +2,270 @@
 
 ## Project Goal
 
-ComputeGrid is a distributed scientific computing platform where users submit computational jobs through an API. Jobs are queued, processed by workers, and their status/results are stored persistently.
+ComputeGrid is a distributed scientific computing platform where users submit computational jobs through an API. Jobs are stored persistently, queued, processed by workers, and their status/results are stored in PostgreSQL.
 
 ## Current Phase
 
-Day 6 — Redis Job Queue Integration
+Day 7 — Worker Process and Job Lifecycle
+
+---
 
 ## Completed
 
-### Day 1 — Project Foundation and Database Foundation
+### Day 1 — Foundation + PostgreSQL
 
-#### Project Setup
+* Created GitHub repository and Python virtual environment.
+* Set up FastAPI/Uvicorn and `/health` + Swagger `/docs`.
+* Installed and configured PostgreSQL.
+* Created `computegrid` database and `jobs` table.
+* `jobs` contains:
+  * `id`
+  * `job_type`
+  * `status`
+  * `input_data` JSONB
+  * `result` JSONB
+  * `error_message`
+  * `created_at`
+  * `started_at`
+  * `completed_at`
+* Default job status is `queued`.
 
-* Created GitHub repository
+### Day 2 — FastAPI → PostgreSQL
 
-* Cloned repository locally
-
-* Created Python virtual environment
-
-* Installed FastAPI and Uvicorn
-
-* Created initial FastAPI application
-
-* Created `/health` endpoint
-
-* Verified local FastAPI server
-
-* Verified FastAPI Swagger documentation at `/docs`
-
-#### PostgreSQL Setup
-
-* Installed PostgreSQL
-
-* Added PostgreSQL `bin` directory to Windows PATH
-
-* Verified `psql` CLI
-
-* Verified PostgreSQL server using `pg_isready`
-
-* Created `computegrid` database
-
-* Connected to `computegrid` using psql
-
-#### Database Design
-
-* Designed initial `jobs` table
-
-* Created `jobs` table
-
-* Added primary key with auto-generated identity
-
-* Added job type
-
-* Added job status
-
-* Added JSONB input data
-
-* Added JSONB result
-
-* Added error message field
-
-* Added job timestamps
-
-#### Database Testing
-
-* Successfully inserted first test job
-
-* Verified job appears in PostgreSQL
-
-* Verified default job status is `queued`
-
-### Day 2 — FastAPI → PostgreSQL Integration
-
-* Added SQLAlchemy 2.x and Psycopg 3 dependencies.
-
-* Added pydantic-settings configuration.
-
-* Created `app/config.py`.
-
-* Created local `.env` configuration and `.env.example`.
-
-* Confirmed `.env` is Git-ignored.
-
+* Added SQLAlchemy 2.x + Psycopg 3.
+* Added `pydantic-settings`.
+* Created `app/config.py` and `.env` / `.env.example`.
 * Created `app/database.py`.
+* Added SQLAlchemy engine, `SessionLocal`, and FastAPI `get_db()`.
+* Added `/health/db`.
+* Verified FastAPI ↔ PostgreSQL connection.
 
-* Created SQLAlchemy engine using PostgreSQL + Psycopg.
+### Day 3 — Job Model + Schemas
 
-* Created `SessionLocal`.
-
-* Created `get_db()` FastAPI database session dependency.
-
-* Verified a real `SELECT 1` query against the `computegrid` database.
-
-* Integrated `get_db()` with FastAPI.
-
-* Preserved `GET /health`.
-
-* Added `GET /health/db`.
-
-* Verified both endpoints return HTTP 200.
-
-* Verified FastAPI can obtain a live PostgreSQL session through dependency injection.
-
-### Day 3 — Job Model and Pydantic Schemas
-
-* Inspected existing `jobs` table schema in PostgreSQL without modifying or altering database structure.
-
-* Created `app/models.py` with the SQLAlchemy `Job` ORM model mapped accurately to the existing `jobs` table using SQLAlchemy 2.0 type annotations (`Mapped`, `mapped_column`, `Identity`, `JSONB`, `DateTime(timezone=True)`).
-
-* Created `app/schemas.py` with Pydantic v2 schemas (`JobBase`, `JobCreate`, `JobResponse`).
-
-* Configured `JobResponse` with `model_config = ConfigDict(from_attributes=True)` for seamless ORM/object serialization.
-
-* Verified SQLAlchemy recognition and registration of `Job` model on `Base.metadata`.
-
-* Tested safe, read-only SELECT query against PostgreSQL `jobs` table using `Job` ORM model.
-
-* Tested and validated Pydantic serialization of database records using `JobResponse.model_validate()`.
+* Created `app/models.py` with SQLAlchemy `Job` model mapped to existing `jobs` table.
+* Created `app/schemas.py`:
+  * `JobBase`
+  * `JobCreate`
+  * `JobResponse`
+* `JobResponse` uses Pydantic `from_attributes=True`.
+* Verified ORM queries and Pydantic serialization.
 
 ### Day 4 — Job Creation API
 
-* Created `app/routers/__init__.py` as the API router package.
-
 * Created `app/routers/jobs.py`.
-
-* Created the `/jobs` FastAPI router with the `jobs` tag.
-
-* Registered the jobs router in `app/main.py`.
-
+* Registered `/jobs` router.
 * Implemented `POST /jobs`.
-
-* Integrated the existing `JobCreate` Pydantic schema for request validation.
-
-* Integrated the existing `JobResponse` Pydantic schema for response serialization.
-
-* Integrated the existing `get_db()` database dependency.
-
-* Created SQLAlchemy `Job` objects from validated API input.
-
-* Added new jobs to the SQLAlchemy session.
-
-* Committed new jobs to PostgreSQL.
-
-* Refreshed the SQLAlchemy object after database commit to retrieve generated fields.
-
-* Verified `POST /jobs` through FastAPI Swagger.
-
-* Verified successful HTTP `201 Created` response.
-
-* Verified the created job receives a database-generated ID.
-
-* Verified the default job status is `queued`.
-
-* Verified the created job exists in the PostgreSQL `jobs` table.
-
-* Confirmed `result`, `error_message`, `started_at`, and `completed_at` are initially `null` for a newly created job.
+* Uses `JobCreate`, `JobResponse`, and `get_db()`.
+* New jobs are committed/refreshed in PostgreSQL.
+* Returns HTTP `201`.
+* New jobs start with `queued` status.
 
 ### Day 5 — Job Status API
 
 * Implemented `GET /jobs/{job_id}`.
+* Uses PostgreSQL/SQLAlchemy lookup.
+* Returns `JobResponse`.
+* Returns `404` when job does not exist.
+* Job retrieval remains PostgreSQL-backed.
 
-* Used the existing SQLAlchemy `Job` ORM model and `get_db()` dependency.
+### Day 6 — Redis Job Queue
 
-* Added database lookup using the job ID.
+* Added `redis>=5.0.0` (installed version 8.1.0).
+* Added `REDIS_HOST` and `REDIS_PORT` settings.
+* Created `app/redis_client.py`.
+* Added `/health/redis`.
+* Created `app/queue.py`.
+* Redis queue key: `computegrid:jobs`.
+* Queue stores **only integer job IDs**.
+* `RPUSH` + `LPOP` provides FIFO behavior.
+* `POST /jobs` now:
+  1. Commits job to PostgreSQL.
+  2. Refreshes job.
+  3. Enqueues job ID into Redis.
+  4. Returns `JobResponse`.
+* PostgreSQL remains the permanent source of truth.
+* Redis is only the temporary job queue.
+* Redis runs through Docker container `computegrid-redis-stack`.
 
-* Returned the existing `JobResponse` schema for successful requests.
+### Day 7 — Worker
 
-* Added HTTP `404 Not Found` handling when a requested job does not exist.
+Created `app/worker.py`.
 
-* Verified `GET /jobs/9999` returns HTTP `404` with `{"detail":"Job not found"}`.
+Worker currently:
 
-* Verified `GET /jobs/3` returns HTTP `200` with the persisted job data.
+1. Polls Redis using `dequeue_job()`.
+2. Receives a job ID.
+3. Creates its own `SessionLocal()` database session.
+4. Looks up the job using `db.get(Job, job_id)`.
+5. Verifies the job exists and is still `queued`.
+6. Changes status:
+   `queued → running`
+7. Sets `started_at` using timezone-aware UTC time.
+8. Commits the status change to PostgreSQL.
+9. Closes the database session safely.
+10. Sleeps when the queue is empty.
 
-* Confirmed job status and timestamps are correctly retrieved from PostgreSQL.
+Worker is started with:
 
-* Kept job retrieval synchronous and PostgreSQL-backed before introducing Redis and workers.
+```bash
+python -m app.worker
 
-### Day 6 — Redis Job Queue Integration
+Verified successfully with a newly created job.
 
-* Added Python Redis client dependency (`redis>=5.0.0`, version 8.1.0 installed) to `requirements.txt`.
+Current Implemented Lifecycle
+QUEUED → RUNNING
 
-* Extended `Settings` in `app/config.py` with `REDIS_HOST` (default `localhost`) and `REDIS_PORT` (default `6379`), and updated `.env.example`.
+Not yet implemented:
 
-* Created `app/redis_client.py` providing a reusable Redis client instance.
+RUNNING → COMPLETED
+RUNNING → FAILED
 
-* Added `GET /health/redis` endpoint to `app/main.py` executing a live Redis PING with `RedisError` handling.
+Scientific computation has not been implemented yet.
 
-* Created `app/queue.py` with a Redis LIST queue abstraction using key `computegrid:jobs`:
-  * `enqueue_job()` pushes job IDs to the tail using `RPUSH`.
-  * `dequeue_job()` pops job IDs from the head using `LPOP` (FIFO).
-
-* Integrated `POST /jobs` in `app/routers/jobs.py` with the Redis job queue:
-  * PostgreSQL remains the persistent source of truth (committed and refreshed first).
-  * Redis receives only the integer job ID.
-  * Explicitly handles `RedisError` on enqueue failures.
-
-* Verified full integration:
-  * Successfully created and enqueued job ID 4 in live test.
-  * Verified PostgreSQL record persistence.
-  * Verified Redis key `computegrid:jobs` contained `['4']`.
-  * Verified FIFO queue mechanics and cleaned test queue data.
-  * Verified `GET /jobs/{job_id}`, `GET /health`, `GET /health/db`, and `GET /health/redis` return HTTP 200.
-
-## Current Architecture
-
+Current Architecture
 Client
-↓
+   ↓
 FastAPI
-↓
-PostgreSQL (persistent job record)
-↓
-Redis Queue (job ID)
-↓
-Worker
-↓
-Scientific Computation
-↓
-PostgreSQL (result/status)
-
-Current job creation and queuing flow:
-
-Client
-↓
-`POST /jobs`
-↓
-Pydantic validation (`JobCreate`)
-↓
-SQLAlchemy `Job`
-↓
-PostgreSQL Commit & Refresh (Source of Truth)
-↓
-Redis Enqueue (`computegrid:jobs` list, Job ID only)
-↓
-`JobResponse` (HTTP 201)
-
-Current job status retrieval flow:
-
-Client
-↓
-`GET /jobs/{job_id}`
-↓
-SQLAlchemy lookup by ID
-↓
+   ↓
 PostgreSQL
-↓
-`JobResponse` (HTTP 200)
-
-Upcoming:
-
-Worker Process
-↓
-Redis Dequeue (`LPOP computegrid:jobs`)
-↓
-PostgreSQL Job Lookup
-↓
-Status update: `queued` → `running`
-↓
+(source of truth)
+   ↓
+Redis Queue
+(computegrid:jobs)
+   ↓
+Worker
+   ↓
 Scientific Computation
-↓
-Status update: `running` → `completed` / `failed`
+   ↓
+PostgreSQL
+(result/status)
+Job Creation
+POST /jobs
+   ↓
+Pydantic validation
+   ↓
+SQLAlchemy Job
+   ↓
+PostgreSQL commit + refresh
+   ↓
+Redis enqueue (job ID only)
+   ↓
+201 JobResponse
+Worker
+Redis LPOP
+   ↓
+job_id
+   ↓
+PostgreSQL lookup
+   ↓
+validate queued
+   ↓
+queued → running
+   ↓
+started_at
+   ↓
+PostgreSQL commit
+   ↓
+scientific computation
+Important Architecture Decisions
+PostgreSQL is the permanent source of truth.
+Redis only stores job IDs, not complete job data.
+Redis queue is computegrid:jobs.
+Queue uses RPUSH + LPOP for FIFO behavior.
+Job is committed to PostgreSQL before Redis enqueue.
+Workers are independent processes, not FastAPI request handlers.
+Workers use SessionLocal() directly; they do not use FastAPI's get_db().
+Worker database sessions must always be closed.
+Worker only changes queued → running after validating current status.
+started_at records when worker processing begins.
+Scientific computation will happen in workers, not inside the API request.
+NumPy/Pandas are planned for scientific workloads.
+Docker is used for Redis.
+Known Issues / Future Reliability Concerns
 
-## Current Database
+These are known architectural limitations but are not being fixed yet:
 
-Database:
+Jobs created before Redis integration were never added to Redis.
+Therefore old PostgreSQL queued jobs may not be processed.
+PostgreSQL commit can succeed while Redis enqueue fails.
+No retry/requeue mechanism yet.
+No worker crash recovery yet.
+No handling for jobs stuck in running.
+Multiple-worker reliability/concurrency is not implemented yet.
 
-`computegrid`
+These should be considered later when improving the distributed-system reliability.
 
-Table:
+Next Tasks
+Day 8 — Scientific Job Execution
+Define the first scientific job type and input contract.
+Create an isolated computation function/module.
+Use NumPy for the initial workload.
+Connect worker to the computation.
+Execute computation after queued → running.
+Store the result in PostgreSQL JSONB.
+Following Days
+Implement running → completed.
+Set completed_at.
+Implement computation error handling.
+Store errors in error_message.
+Implement running → failed.
+Test successful and failed jobs through GET /jobs/{job_id}.
+Test the complete lifecycle.
+Later
+Multiple workers/concurrent execution.
+Retry and failure recovery.
+Queue reliability improvements.
+Logging/observability.
+Dockerize complete system.
+Automated tests.
+GitHub Actions CI/CD.
+Performance/benchmarking.
+Project Structure
 
-`jobs`
+Important current files:
 
-Initial job lifecycle:
+app/
+├── main.py
+├── config.py
+├── database.py
+├── models.py
+├── schemas.py
+├── redis_client.py
+├── queue.py
+├── worker.py
+└── routers/
+    ├── __init__.py
+    └── jobs.py
 
-`QUEUED → RUNNING → COMPLETED`
+Important infrastructure:
 
-or
+PostgreSQL
+  database: computegrid
+  table: jobs
 
-`QUEUED → RUNNING → FAILED`
-
-Current behavior:
-
-* Newly submitted jobs are stored in PostgreSQL with `queued` status and enqueued as IDs into Redis (`computegrid:jobs`).
-
-* Individual jobs can be retrieved by their database ID through the API (`GET /jobs/{job_id}`).
-
-* Worker execution and computational processing will be introduced in the next phase.
-
-## Current Task
-
-Day 6 — Redis Job Queue Integration completed.
-
-## Next Tasks
-
-1. Day 7 — Worker:
-   * Introduce worker process
-   * Dequeue job IDs from Redis (`computegrid:jobs`)
-   * Look up job records in PostgreSQL
-   * Transition job status: `queued` → `running`
-
-2. Connect queued jobs to scientific computation
-
-## Important Decisions
-
-* Python is the primary language.
-
-* FastAPI provides the API layer.
-
-* PostgreSQL stores persistent job information and remains the permanent source of truth.
-
-* Redis handles lightweight job queueing (storing only integer job IDs).
-
-* Queue key is `computegrid:jobs` using a Redis LIST with FIFO semantics (`RPUSH` / `LPOP`).
-
-* Workers will execute computational jobs asynchronously.
-
-* NumPy/Pandas will be used for scientific workloads.
-
-* Docker is used for services like Redis (`computegrid-redis-stack`).
-
-* Job creation commits to PostgreSQL before enqueuing to Redis.
-
-* Job status retrieval is handled synchronously through PostgreSQL.
-
-## Known Issues
-
-None currently.
-
-## Setup
-
-Create and activate the virtual environment:
-
-```bash
-python -m venv .venv
-
-.venv\Scripts\Activate.ps1
-```
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Run the application:
-
-```bash
+Redis
+  container: computegrid-redis-stack
+  port: 6379
+  queue: computegrid:jobs
+Useful Commands
+Start API
 uvicorn app.main:app --reload
-```
+Start Worker
+python -m app.worker
+Redis CLI
+docker exec -it computegrid-redis-stack redis-cli
 
-Health endpoints:
+Check queue:
 
-```text
-http://127.0.0.1:8000/health
-http://127.0.0.1:8000/health/db
-http://127.0.0.1:8000/health/redis
-```
+LRANGE computegrid:jobs 0 -1
 
-API documentation:
+Check queue length:
 
-```text
-http://127.0.0.1:8000/docs
-```
-
-## PostgreSQL
-
-Connect to PostgreSQL:
-
-```bash
+LLEN computegrid:jobs
+PostgreSQL
 psql -U postgres
-```
-
-Connect to ComputeGrid:
-
-```sql
 \c computegrid
-```
-
-Check jobs table:
-
-```sql
-\d jobs
-```
 
 View jobs:
 
-```sql
 SELECT * FROM jobs;
-```
