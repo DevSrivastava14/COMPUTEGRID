@@ -40,6 +40,9 @@ from app.database import SessionLocal
 # The Job ORM model maps to the "jobs" table in PostgreSQL.
 from app.models import Job
 
+# Scientific computation workload
+from app.compute import run_matrix_stats
+
 # ── Logging setup ────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -54,7 +57,7 @@ POLL_INTERVAL_SECONDS = 2
 
 def process_job(job_id: int) -> None:
     """
-    Transition a Job from 'queued' to 'running' in PostgreSQL.
+    Transition a Job from 'queued' to 'running' in PostgreSQL and run computation.
 
     Steps:
       1. Open a SQLAlchemy session.
@@ -64,10 +67,7 @@ def process_job(job_id: int) -> None:
       5. Set status = 'running' and started_at = current UTC time.
       6. Commit the change to PostgreSQL.
       7. Log the successful transition.
-
-    In future tasks this function will also:
-      - Run scientific computation.
-      - Save the result and mark it as 'completed' or 'failed'.
+      8. Execute scientific computation with job.input_data.
     """
     # Open a session manually (not via FastAPI's Depends) because the worker
     # runs outside the HTTP request/response cycle.
@@ -107,6 +107,36 @@ def process_job(job_id: int) -> None:
             job.job_type,
             job.started_at.isoformat(),
         )
+
+        # ── 4. Execute scientific computation & update status ─────────────────
+        try:
+            result = run_matrix_stats(job.input_data)
+            logger.info("job_id=%d | computation completed | result=%s", job.id, result)
+
+            # ── 5. Transition: running → completed ────────────────────────────
+            job.result = result
+            job.status = "completed"
+            job.completed_at = datetime.now(timezone.utc)
+            db.commit()
+
+            logger.info(
+                "job_id=%d | running → completed | completed_at=%s",
+                job.id,
+                job.completed_at.isoformat(),
+            )
+        except Exception as exc:
+            logger.exception("job_id=%d | computation failed: %s", job.id, exc)
+            job.status = "failed"
+            job.error_message = str(exc)
+            job.result = None
+            job.completed_at = None
+            db.commit()
+
+            logger.info(
+                "job_id=%d | running → failed | error=%s",
+                job.id,
+                job.error_message,
+            )
 
     finally:
         # Always close the session to return the connection to the pool.
