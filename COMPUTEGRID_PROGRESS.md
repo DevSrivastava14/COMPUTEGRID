@@ -6,7 +6,7 @@ ComputeGrid is a distributed scientific computing platform where users submit co
 
 Current Phase
 
-Day 8 — Scientific Computation, Job Completion and Failure Handling
+Day 9 — Stale Job Detection and Recovery
 
 Completed
 
@@ -499,6 +499,84 @@ Redis/API architecture remains unchanged.
 
 No obvious bugs or syntax issues were found.
 
+Day 9 — Stale Job Detection and Recovery
+
+Overview
+
+Implemented reliability and fault tolerance mechanisms to detect and recover orphaned or stuck jobs left in the "running" state due to worker crashes, unhandled termination, or unexpected hangs.
+
+Reliability Module
+
+Created app/recovery.py.
+
+Constants:
+
+STALE_JOB_TIMEOUT_MINUTES = 10
+
+Stale Job Detection:
+
+find_stale_jobs(db):
+- Finds jobs in PostgreSQL with status == "running".
+- Requires started_at to be NOT NULL.
+- Requires completed_at to be NULL.
+- Treats running jobs older than the 10-minute timeout threshold (started_at < now(UTC) - STALE_JOB_TIMEOUT_MINUTES) as stale.
+- Strictly read-only detection; does not modify any database records or queue states.
+
+Stale Job Recovery:
+
+recover_stale_job(db, job_id):
+- Retrieves the specified job from PostgreSQL using SQLAlchemy.
+- Only operates on jobs currently with status == "running".
+- Verifies that the job is actually stale according to the timeout threshold.
+- Resets stale job attributes:
+    running → queued
+    started_at → NULL
+    completed_at → NULL
+    error_message → NULL
+    result → NULL
+- Re-enqueues the job ID into Redis using the existing enqueue_job() queue abstraction.
+- Commits the PostgreSQL transaction.
+- Rolls back database changes on Redis or database failure to prevent orphaned state.
+- Logs all recovery activity.
+- Returns True on successful recovery and False when recovery is not applicable or fails.
+
+Testing & Validation
+
+Stale Job Detection:
+- Scanned existing database records and identified 7 stale jobs: IDs 7, 8, 9, 10, 11, 12, and 15.
+
+Controlled Recovery Lifecycle Test:
+- Job 7 was selected for controlled recovery verification.
+- Verified state transition:
+    RUNNING → QUEUED
+    job ID 7 was added to Redis queue (computegrid:jobs).
+- The worker process was allowed to dequeue and execute the recovered job.
+- Job 7 executed scientific computation and completed successfully.
+- Demonstrated complete recovery lifecycle:
+    RUNNING → stale → QUEUED → Redis → RUNNING → COMPLETED
+
+Idempotency and Guard Testing:
+- A second recovery attempt on Job 7 returned False after the worker had already completed it.
+- PostgreSQL remained COMPLETED.
+- Redis contained zero copies of Job 7.
+- The test script reported FAILED only because the script's assertion expected Job 7 to still be QUEUED (since the worker had already picked up and completed the job in the background); the recovery function itself correctly and safely refused to modify a non-running / completed job.
+
+Temporary Test Scripts:
+- test_recovery.py: manual script for read-only detection and single-job recovery verification.
+- test_recovery_idempotency.py: verification script for guard logic on non-stale/completed jobs.
+(Note: These are temporary standalone scripts and are not part of permanent production test suites).
+
+Important Reliability Note
+
+PostgreSQL and Redis are separate distributed systems, so the recovery transaction is not globally atomic across both systems. A future outbox/coordination mechanism may be considered if stronger distributed transaction guarantees are required.
+
+Day 9 Review
+
+- No database schema changes were required.
+- Existing files (app/models.py, app/worker.py, app/queue.py) remained unchanged.
+- PostgreSQL remains the authoritative source of truth.
+- Redis continues to store only job IDs.
+
 Current Architecture
 
 Client
@@ -568,7 +646,31 @@ Scientific Computation
 │     └── completed_at
 │
 └──→ FAILED
-└── error_message
+      └── error_message
+
+Stale Job Recovery Lifecycle:
+
+RUNNING (stale / crashed worker)
+
+↓
+
+find_stale_jobs() / recover_stale_job()
+
+↓
+
+QUEUED (PostgreSQL reset)
+
+↓
+
+Redis (re-enqueued)
+
+↓
+
+Worker (re-processed)
+
+↓
+
+COMPLETED / FAILED
 
 Current Database
 
@@ -614,15 +716,15 @@ GET /jobs/{job_id}
 
 Current Task
 
-Day 8 — Scientific Computation, Completion and Failure Handling completed.
+Day 9 — Stale Job Detection and Recovery completed.
 
 Next Tasks
 
-Day 9 — Continue the existing ComputeGrid roadmap.
+Day 10 — Continue the existing ComputeGrid roadmap.
 
-Review and commit all Day 8 changes.
+Review and commit all Day 9 changes.
 
-Push Day 8 changes to GitHub.
+Push Day 9 changes to GitHub.
 
 Important Decisions
 
@@ -650,10 +752,6 @@ Known Future Improvements
 
 Retry/requeue mechanisms.
 
-Worker crash recovery.
-
-Handling jobs stuck in running.
-
 Multiple-worker concurrency and reliability.
 
 More job types and computation dispatching.
@@ -668,11 +766,11 @@ GitHub Actions CI/CD.
 
 Performance and load testing.
 
-Additional distributed-system reliability mechanisms.
+Additional distributed-system reliability mechanisms (e.g. transactional outbox).
 
 Known Issues
 
-No blocking issues identified in the Day 8 implementation.
+No blocking issues identified in the Day 9 implementation.
 
 Setup
 
