@@ -31,7 +31,8 @@ from datetime import datetime, timezone
 
 # Reuse the existing queue abstraction.
 # dequeue_job() calls LPOP on "computegrid:jobs" and returns an int or None.
-from app.queue import dequeue_job
+# enqueue_job() calls RPUSH to add a job back to the queue.
+from app.queue import dequeue_job, enqueue_job
 
 # Reuse the existing database infrastructure – no second engine or config.
 # SessionLocal is the SQLAlchemy session factory defined in database.py.
@@ -50,6 +51,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+# Maximum number of retry attempts before a job transitions permanently to failed.
+MAX_RETRIES = 3
 
 # How long (in seconds) to sleep when the queue is empty before polling again.
 POLL_INTERVAL_SECONDS = 2
@@ -126,17 +130,34 @@ def process_job(job_id: int) -> None:
             )
         except Exception as exc:
             logger.exception("job_id=%d | computation failed: %s", job.id, exc)
-            job.status = "failed"
             job.error_message = str(exc)
             job.result = None
             job.completed_at = None
-            db.commit()
 
-            logger.info(
-                "job_id=%d | running → failed | error=%s",
-                job.id,
-                job.error_message,
-            )
+            if job.retry_count < MAX_RETRIES:
+                job.retry_count += 1
+                job.status = "queued"
+                job.started_at = None
+                db.commit()
+
+                enqueue_job(job.id)
+                logger.info(
+                    "job_id=%d | retry %d/%d | running → queued (re-enqueued) | error=%s",
+                    job.id,
+                    job.retry_count,
+                    MAX_RETRIES,
+                    job.error_message,
+                )
+            else:
+                job.status = "failed"
+                db.commit()
+                logger.info(
+                    "job_id=%d | max retries reached (%d/%d) | running → failed | error=%s",
+                    job.id,
+                    job.retry_count,
+                    MAX_RETRIES,
+                    job.error_message,
+                )
 
     finally:
         # Always close the session to return the connection to the pool.

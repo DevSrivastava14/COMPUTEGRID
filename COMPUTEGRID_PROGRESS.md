@@ -6,7 +6,7 @@ ComputeGrid is a distributed scientific computing platform where users submit co
 
 Current Phase
 
-Day 9 — Stale Job Detection and Recovery
+Day 10 — Job Retry and Requeue Mechanism
 
 Completed
 
@@ -577,6 +577,51 @@ Day 9 Review
 - PostgreSQL remains the authoritative source of truth.
 - Redis continues to store only job IDs.
 
+Day 10 — Job Retry and Requeue Mechanism
+
+Overview
+
+Implemented an automated bounded retry and requeue mechanism for failed computational jobs to handle transient execution errors and failures cleanly with persistent attempt tracking.
+
+Database Schema & Model Changes
+
+- Added `retry_count` column to the PostgreSQL `jobs` table:
+  `jobs.retry_count INTEGER NOT NULL DEFAULT 0`
+- Updated `Job` model in `app/models.py` with SQLAlchemy 2.x `Mapped[int]` column mapping and `server_default=text("0")`.
+- Existing jobs safely defaulted to `retry_count = 0`.
+
+Worker Retry Logic
+
+- Updated `app/worker.py` with `MAX_RETRIES = 3`.
+- Updated computation exception handler in `process_job()`:
+  - If `job.retry_count < MAX_RETRIES`:
+    - Increments `job.retry_count += 1`.
+    - Resets `job.status` to `"queued"`.
+    - Clears `job.started_at`, `job.completed_at`, and `job.result`.
+    - Preserves `job.error_message` for diagnostic visibility and debugging.
+    - Commits PostgreSQL transaction state.
+    - Re-enqueues the job ID into Redis using `enqueue_job(job.id)`.
+    - Logs retry attempt (`retry X/3`).
+  - If `job.retry_count >= MAX_RETRIES`:
+    - Sets `job.status` permanently to `"failed"`.
+    - Retains `job.error_message`.
+    - Commits PostgreSQL transaction state.
+    - Does not re-enqueue into Redis.
+
+Testing & Validation
+
+- Created a temporary test script (`test_retry.py`) submitting a job configured to trigger a computation error (`matrix_stats` with input `{"size": 0}`).
+- Verified with `job_id=19`:
+  - Initial attempt + 3 retries = 4 total executions.
+  - Initial execution (`retry_count=0`): Failed with `ValueError: Matrix size must be a positive integer.` → incremented to `retry_count=1`, status set to `queued`, re-enqueued.
+  - Retry 1 (`retry_count=1`): Failed → incremented to `retry_count=2`, status set to `queued`, re-enqueued.
+  - Retry 2 (`retry_count=2`): Failed → incremented to `retry_count=3`, status set to `queued`, re-enqueued.
+  - Retry 3 (`retry_count=3`): Failed → reached `MAX_RETRIES` (3), status transitioned permanently to `failed`, not re-enqueued.
+  - Verified final database state: `status = "failed"`, `retry_count = 3`, `error_message = "Matrix size must be a positive integer."`.
+  - Verified Redis queue length returned to `0`.
+- Temporary test files (`test_retry.py`, `test_recovery.py`, `test_recovery_idempotency.py`) were removed.
+- No git commits or pushes have been made yet.
+
 Current Architecture
 
 Client
@@ -645,8 +690,9 @@ Scientific Computation
 │     ├── result
 │     └── completed_at
 │
-└──→ FAILED
-      └── error_message
+└──→ EXCEPTION / FAILURE
+      ├── retry_count < MAX_RETRIES (3) ──→ QUEUED (re-enqueued into Redis, retry_count += 1)
+      └── retry_count >= MAX_RETRIES (3) ──→ FAILED (error_message preserved, not re-enqueued)
 
 Stale Job Recovery Lifecycle:
 
@@ -690,6 +736,8 @@ job_type
 
 status
 
+retry_count
+
 input_data
 
 result
@@ -716,15 +764,19 @@ GET /jobs/{job_id}
 
 Current Task
 
-Day 9 — Stale Job Detection and Recovery completed.
+Day 10 — Job Retry and Requeue Mechanism completed.
 
 Next Tasks
 
-Day 10 — Continue the existing ComputeGrid roadmap.
+Day 11 — Multiple-Worker Concurrency and Reliability.
 
-Review and commit all Day 9 changes.
+Day 12 — Additional Computation Workloads and Dispatching.
 
-Push Day 9 changes to GitHub.
+Day 13 — Automated Test Suite and CI/CD Integration.
+
+Review and commit all Day 10 changes.
+
+Push Day 10 changes to GitHub.
 
 Important Decisions
 
@@ -750,8 +802,6 @@ Scientific computation is not performed inside the API request.
 
 Known Future Improvements
 
-Retry/requeue mechanisms.
-
 Multiple-worker concurrency and reliability.
 
 More job types and computation dispatching.
@@ -770,7 +820,7 @@ Additional distributed-system reliability mechanisms (e.g. transactional outbox)
 
 Known Issues
 
-No blocking issues identified in the Day 9 implementation.
+No blocking issues identified in the Day 10 implementation.
 
 Setup
 
