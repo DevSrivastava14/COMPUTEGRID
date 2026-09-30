@@ -6,7 +6,7 @@ ComputeGrid is a distributed scientific computing platform where users submit co
 
 Current Phase
 
-Day 10 — Job Retry and Requeue Mechanism
+Day 11 — Multiple-Worker Concurrency and Reliability
 
 Completed
 
@@ -622,6 +622,50 @@ Testing & Validation
 - Temporary test files (`test_retry.py`, `test_recovery.py`, `test_recovery_idempotency.py`) were removed.
 - No git commits or pushes have been made yet.
 
+Day 11 — Multiple-Worker Concurrency and Reliability
+
+Overview
+
+Implemented multi-worker concurrency protection and atomic PostgreSQL job-claiming logic to ensure safe parallel execution across multiple worker instances and prevent race conditions or duplicate job processing.
+
+Atomic PostgreSQL Job Claiming
+
+- Added `claim_job(db: Session, job_id: int) -> bool` helper in `app/worker.py`.
+- Implemented atomic transition (`queued` → `running`) using a single conditional SQL `UPDATE`:
+  ```sql
+  UPDATE jobs
+  SET status = 'running', started_at = :now
+  WHERE id = :job_id AND status = 'queued'
+  ```
+- Evaluated update result:
+  - If `rowcount == 1`: The worker successfully claimed the job.
+  - If `rowcount == 0`: The job was already claimed, completed, or otherwise not queued; the worker safely skips execution.
+- Preserved `started_at` timestamp setting upon successful claim.
+- Leveraged PostgreSQL row-level locking during `UPDATE` to prevent race conditions without introducing external distributed locks or additional dependencies.
+
+Multiple-Worker Concurrency & Race-Condition Testing
+
+- Multiple-Worker Concurrency Test:
+  - Started multiple worker processes simultaneously polling `computegrid:jobs`.
+  - Verified distributed job consumption across active workers.
+- Race-Condition & Duplicate Protection Test (Job 26):
+  - Injected duplicate / concurrent claim scenarios for `job_id=26` across multiple running workers.
+  - Test result:
+    - Worker 1 successfully matched `WHERE id = 26 AND status = 'queued'`, updated 1 row (`claim_job` returned `True`), claimed the job, executed `run_matrix_stats()`, and transitioned the job to `completed`.
+    - Worker 2 attempted to claim the same job, matched 0 rows because the job was no longer `queued` (`claim_job` returned `False`), and safely skipped execution.
+    - Verified that `job_id=26` was executed exactly once with zero duplicate processing and consistent database state.
+
+Day 11 Review
+
+- Reviewed:
+  - `app/worker.py`
+  - `COMPUTEGRID_PROGRESS.md`
+- Review findings:
+  - Atomic conditional update prevents multiple workers from simultaneously claiming the same queued job.
+  - Database integrity is maintained under multi-worker concurrency.
+  - Existing retry logic (`MAX_RETRIES = 3`) and stale job recovery remain fully compatible.
+  - No new dependencies or architectural breaking changes were introduced.
+
 Current Architecture
 
 Client
@@ -639,8 +683,7 @@ PostgreSQL
 ↓
 
 Redis Queue
-
-(computegrid)
+(computegrid:jobs)
 
 ↓
 
@@ -764,19 +807,19 @@ GET /jobs/{job_id}
 
 Current Task
 
-Day 10 — Job Retry and Requeue Mechanism completed.
+Day 11 — Multiple-Worker Concurrency and Reliability completed.
 
 Next Tasks
-
-Day 11 — Multiple-Worker Concurrency and Reliability.
 
 Day 12 — Additional Computation Workloads and Dispatching.
 
 Day 13 — Automated Test Suite and CI/CD Integration.
 
-Review and commit all Day 10 changes.
+Day 14 — Performance Optimization, Observability, and Dockerization.
 
-Push Day 10 changes to GitHub.
+Review and commit all Day 11 changes.
+
+Push Day 11 changes to GitHub.
 
 Important Decisions
 
@@ -801,8 +844,6 @@ Database sessions in workers are explicitly closed.
 Scientific computation is not performed inside the API request.
 
 Known Future Improvements
-
-Multiple-worker concurrency and reliability.
 
 More job types and computation dispatching.
 
@@ -884,11 +925,11 @@ PING
 
 Check queue:
 
-LRANGE computegrid 0 -1
+LRANGE computegrid:jobs 0 -1
 
 Check queue length:
 
-LLEN computegrid
+LLEN computegrid:jobs
 
 Exit:
 

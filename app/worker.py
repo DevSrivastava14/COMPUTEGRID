@@ -1,20 +1,22 @@
 """
 app/worker.py
 =============
-ComputeGrid Worker – Day 7 (initial skeleton)
+ComputeGrid Worker – Distributed Job Consumer
 
 Responsibility
 --------------
-This module is the *worker* process.  Its only job right now is to:
+This module is the *worker* process. Its responsibilities are:
 
-  1. Continuously poll the Redis queue for job IDs.
-  2. Look up the corresponding Job row in PostgreSQL.
-  3. Log useful information about the job (id, type, status, input data).
-
-What it does NOT do yet
------------------------
-  - No scientific computation.
-  - No PostgreSQL status updates (job status is read-only for now).
+  1. Continuously poll the Redis queue for pending job IDs.
+  2. Atomically claim queued jobs in PostgreSQL (`queued` → `running`) using a
+     conditional UPDATE to ensure safe multi-worker concurrency and prevent race
+     conditions or duplicate job execution.
+  3. Execute scientific computation workloads (e.g. NumPy matrix operations)
+     asynchronously outside the API request cycle.
+  4. Record computation results and timestamps in PostgreSQL upon successful completion.
+  5. Handle computation errors gracefully with bounded automatic retries and re-queueing
+     (up to MAX_RETRIES) before transitioning permanently to `failed`.
+  6. Properly manage PostgreSQL database sessions and connection lifecycle.
 
 How to run
 ----------
@@ -22,12 +24,16 @@ From the project root (with your virtual environment active):
 
     python -m app.worker
 
+Multiple worker processes can be started concurrently to process jobs in parallel.
 Press Ctrl+C to stop the worker.
 """
 
 import time
 import logging
 from datetime import datetime, timezone
+
+from sqlalchemy import update
+from sqlalchemy.orm import Session
 
 # Reuse the existing queue abstraction.
 # dequeue_job() calls LPOP on "computegrid:jobs" and returns an int or None.
@@ -59,57 +65,64 @@ MAX_RETRIES = 3
 POLL_INTERVAL_SECONDS = 2
 
 
+def claim_job(db: Session, job_id: int) -> bool:
+    """
+    Atomically transition a job from 'queued' to 'running' in PostgreSQL.
+
+    Executes a single conditional UPDATE statement:
+        UPDATE jobs
+        SET status = 'running', started_at = :now
+        WHERE id = :job_id AND status = 'queued'
+
+    Returns:
+        True if exactly 1 row was updated (job successfully claimed),
+        False if 0 rows were updated (already claimed, completed, or not queued).
+    """
+    stmt = (
+        update(Job)
+        .where(Job.id == job_id, Job.status == "queued")
+        .values(status="running", started_at=datetime.now(timezone.utc))
+    )
+    result = db.execute(stmt)
+    db.commit()
+    return result.rowcount == 1
+
+
 def process_job(job_id: int) -> None:
     """
-    Transition a Job from 'queued' to 'running' in PostgreSQL and run computation.
+    Atomically claim a Job in PostgreSQL and run scientific computation.
 
     Steps:
       1. Open a SQLAlchemy session.
-      2. Fetch the Job row by primary key.
-      3. Guard: if the job doesn't exist, log a warning and return.
-      4. Guard: if the job is not 'queued', log a warning and return.
-      5. Set status = 'running' and started_at = current UTC time.
-      6. Commit the change to PostgreSQL.
-      7. Log the successful transition.
-      8. Execute scientific computation with job.input_data.
+      2. Atomically claim the job (status 'queued' -> 'running').
+      3. If claim fails (0 rows updated), skip execution.
+      4. Fetch the claimed job row.
+      5. Execute scientific computation with job.input_data.
+      6. Transition to 'completed' or handle retry / failure.
     """
     # Open a session manually (not via FastAPI's Depends) because the worker
     # runs outside the HTTP request/response cycle.
     db = SessionLocal()
     try:
-        # ── 1. Fetch the Job row by primary key ───────────────────────────────
-        job = db.get(Job, job_id)
-
-        if job is None:
-            # The ID came from Redis but no matching row exists in PostgreSQL.
-            # This should not happen in normal operation.
-            logger.warning("job_id=%d not found in PostgreSQL – skipping.", job_id)
-            return
-
-        # ── 2. Guard: only transition jobs that are still 'queued' ────────────
-        if job.status != "queued":
+        # ── 1. Atomically claim the job: queued → running ─────────────────────
+        if not claim_job(db, job_id):
             logger.warning(
-                "job_id=%d has status=%r (expected 'queued') – skipping to "
-                "avoid incorrect state transition.",
+                "job_id=%d could not be claimed (not 'queued' or does not exist) – skipping.",
                 job_id,
-                job.status,
             )
             return
 
-        # ── 3. Transition: queued → running ───────────────────────────────────
-        job.status = "running"
-        # datetime.now(timezone.utc) is timezone-aware, matching the
-        # DateTime(timezone=True) definition in models.py.
-        job.started_at = datetime.now(timezone.utc)
-
-        # Write the change to PostgreSQL.
-        db.commit()
+        # ── 2. Fetch the claimed Job row ──────────────────────────────────────
+        job = db.get(Job, job_id)
+        if job is None:
+            logger.warning("job_id=%d not found in PostgreSQL – skipping.", job_id)
+            return
 
         logger.info(
             "job_id=%d | queued → running | type=%r | started_at=%s",
             job.id,
             job.job_type,
-            job.started_at.isoformat(),
+            job.started_at.isoformat() if job.started_at else "",
         )
 
         # ── 4. Execute scientific computation & update status ─────────────────
