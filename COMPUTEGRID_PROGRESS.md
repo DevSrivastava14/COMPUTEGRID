@@ -6,7 +6,7 @@ ComputeGrid is a distributed scientific computing platform where users submit co
 
 Current Phase
 
-Day 11 — Multiple-Worker Concurrency and Reliability
+Day 12 — Additional Computation Workloads and Dispatching
 
 Completed
 
@@ -666,6 +666,26 @@ Day 11 Review
   - Existing retry logic (`MAX_RETRIES = 3`) and stale job recovery remain fully compatible.
   - No new dependencies or architectural breaking changes were introduced.
 
+Day 12 — Additional Computation Workloads and Dispatching
+
+Completed:
+- Added `matrix_multiply` scientific workload.
+- Added `data_stats` scientific workload.
+- Added dictionary-based `DISPATCH_TABLE`.
+- Added `dispatch_job(job_type, input_data)`.
+- Updated worker to dispatch workloads based on `job.job_type`.
+- Preserved atomic job claiming and existing retry/failure logic.
+
+Testing:
+- `matrix_stats` → completed successfully.
+- `matrix_multiply` → completed successfully.
+- `data_stats` → completed successfully.
+- Unsupported `unknown_workload` → correctly retried 3 times and then failed.
+- Verified final failure had `retry_count = 3`, `result = null`, and the expected error message.
+
+Architecture now supports:
+`job_type → dispatch_job() → selected scientific workload`
+
 Current Architecture
 
 Client
@@ -692,8 +712,7 @@ Worker
 ↓
 
 Scientific Computation
-
-(NumPy)
+(job_type → dispatch_job() → selected workload)
 
 ↓
 
@@ -728,6 +747,7 @@ RUNNING
 ↓
 
 Scientific Computation
+(dispatch_job)
 
 ├──→ COMPLETED
 │     ├── result
@@ -807,19 +827,13 @@ GET /jobs/{job_id}
 
 Current Task
 
-Day 11 — Multiple-Worker Concurrency and Reliability completed.
+Day 12 — Additional Computation Workloads and Dispatching completed.
 
 Next Tasks
 
-Day 12 — Additional Computation Workloads and Dispatching.
-
-Day 13 — Automated Test Suite and CI/CD Integration.
-
-Day 14 — Performance Optimization, Observability, and Dockerization.
-
-Review and commit all Day 11 changes.
-
-Push Day 11 changes to GitHub.
+- Day 13: Automated test suite + GitHub Actions CI
+- Day 14: Performance/observability + Dockerization/integration
+- Later: final cleanup, documentation, and project review
 
 Important Decisions
 

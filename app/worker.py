@@ -48,7 +48,7 @@ from app.database import SessionLocal
 from app.models import Job
 
 # Scientific computation workload
-from app.compute import run_matrix_stats
+from app.compute import dispatch_job
 
 # ── Logging setup ────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -127,7 +127,7 @@ def process_job(job_id: int) -> None:
 
         # ── 4. Execute scientific computation & update status ─────────────────
         try:
-            result = run_matrix_stats(job.input_data)
+            result = dispatch_job(job.job_type, job.input_data)
             logger.info("job_id=%d | computation completed | result=%s", job.id, result)
 
             # ── 5. Transition: running → completed ────────────────────────────
