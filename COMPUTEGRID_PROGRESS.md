@@ -6,7 +6,7 @@ ComputeGrid is a distributed scientific computing platform where users submit co
 
 Current Phase
 
-Day 12 — Additional Computation Workloads and Dispatching
+Day 14 — Performance, Observability & Dockerization/Integration
 
 Completed
 
@@ -686,6 +686,33 @@ Testing:
 Architecture now supports:
 `job_type → dispatch_job() → selected scientific workload`
 
+Day 13 — Automated Test Suite + CI
+
+Completed:
+- Added pytest-based automated tests:
+  - `tests/test_compute.py` — 38 tests
+  - `tests/test_api.py` — 21 tests
+  - `tests/test_queue_recovery.py` — 27 tests
+  - `tests/test_worker.py` — 23 tests
+- Total: 109 tests
+- Verified result: 109 passed, 2 warnings in 1.65s
+- Added `pytest`, `httpx`, and `numpy` dependencies to `requirements.txt` as needed.
+- Added GitHub Actions workflow:
+  - `.github/workflows/ci.yml`
+  - Python 3.13 runner
+  - PostgreSQL 16 service container
+  - Dependency installation
+  - Database schema creation
+  - Pytest execution
+- Tests mock Redis where appropriate; the suite does not require a live Redis service.
+- Two dependency deprecation warnings (Starlette `TestClient` / AnyIO unclosed resource) documented as non-blocking.
+
+Git & Status:
+- Commit: `790f58e` — "Add automated test suite and CI"
+- Commit was pushed successfully to `origin/main`.
+- Working tree is clean.
+
+
 Current Architecture
 
 Client
@@ -827,13 +854,21 @@ GET /jobs/{job_id}
 
 Current Task
 
-Day 12 — Additional Computation Workloads and Dispatching completed.
+Day 13 — Automated Test Suite + CI completed.
 
-Next Tasks
+Next Task:
+Day 14 — Performance, Observability & Dockerization/Integration
 
-- Day 13: Automated test suite + GitHub Actions CI
-- Day 14: Performance/observability + Dockerization/integration
-- Later: final cleanup, documentation, and project review
+Objectives:
+1. Establish a basic performance baseline for job submission and worker processing.
+2. Improve structured/useful logging so the job lifecycle can be traced clearly.
+3. Dockerize the ComputeGrid application and worker.
+4. Integrate FastAPI + worker + PostgreSQL + Redis into a reproducible local Docker environment.
+5. Add/verify integration tests for the real multi-component flow where useful.
+6. Update README/documentation with the production-like architecture and run instructions.
+
+Future Tasks:
+- Final cleanup, documentation, and project review
 
 Important Decisions
 
@@ -875,7 +910,7 @@ Additional distributed-system reliability mechanisms (e.g. transactional outbox)
 
 Known Issues
 
-No blocking issues identified in the Day 10 implementation.
+- Two non-blocking upstream dependency deprecation warnings during test runs (Starlette `TestClient` / AnyIO event loop resource). These are non-blocking and do not require immediate changes.
 
 Setup
 
