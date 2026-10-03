@@ -65,7 +65,10 @@ def find_stale_jobs(db: Session) -> list[Job]:
         Job.started_at < cutoff_time,
     )
 
-    return list(db.scalars(stmt).all())
+    stale_jobs = list(db.scalars(stmt).all())
+    if stale_jobs:
+        logger.info("Found %d stale running job(s) eligible for recovery", len(stale_jobs))
+    return stale_jobs
 
 
 def recover_stale_job(db: Session, job_id: int) -> bool:
@@ -122,8 +125,9 @@ def recover_stale_job(db: Session, job_id: int) -> bool:
         db.commit()
 
         logger.info(
-            "job_id=%d | recovered stale job | status reset to 'queued' and enqueued to Redis",
+            "job_id=%d | recovered stale job | type=%s | status reset to 'queued' and enqueued to Redis",
             job.id,
+            job.job_type,
         )
         return True
 

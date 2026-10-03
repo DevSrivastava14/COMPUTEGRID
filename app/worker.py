@@ -119,16 +119,24 @@ def process_job(job_id: int) -> None:
             return
 
         logger.info(
-            "job_id=%d | queued → running | type=%r | started_at=%s",
+            "job_id=%d | claimed | queued → running | type=%s | started_at=%s",
             job.id,
             job.job_type,
             job.started_at.isoformat() if job.started_at else "",
         )
 
         # ── 4. Execute scientific computation & update status ─────────────────
+        start_time = time.perf_counter()
         try:
             result = dispatch_job(job.job_type, job.input_data)
-            logger.info("job_id=%d | computation completed | result=%s", job.id, result)
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.info(
+                "job_id=%d | computation completed in %.2fms | type=%s | result=%s",
+                job.id,
+                duration_ms,
+                job.job_type,
+                result,
+            )
 
             # ── 5. Transition: running → completed ────────────────────────────
             job.result = result
@@ -137,12 +145,20 @@ def process_job(job_id: int) -> None:
             db.commit()
 
             logger.info(
-                "job_id=%d | running → completed | completed_at=%s",
+                "job_id=%d | running → completed | type=%s | completed_at=%s",
                 job.id,
+                job.job_type,
                 job.completed_at.isoformat(),
             )
         except Exception as exc:
-            logger.exception("job_id=%d | computation failed: %s", job.id, exc)
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.exception(
+                "job_id=%d | computation failed after %.2fms | type=%s: %s",
+                job.id,
+                duration_ms,
+                job.job_type,
+                exc,
+            )
             job.error_message = str(exc)
             job.result = None
             job.completed_at = None
@@ -155,20 +171,22 @@ def process_job(job_id: int) -> None:
 
                 enqueue_job(job.id)
                 logger.info(
-                    "job_id=%d | retry %d/%d | running → queued (re-enqueued) | error=%s",
+                    "job_id=%d | retry %d/%d | running → queued (re-enqueued) | type=%s | error=%s",
                     job.id,
                     job.retry_count,
                     MAX_RETRIES,
+                    job.job_type,
                     job.error_message,
                 )
             else:
                 job.status = "failed"
                 db.commit()
                 logger.info(
-                    "job_id=%d | max retries reached (%d/%d) | running → failed | error=%s",
+                    "job_id=%d | max retries reached (%d/%d) | running → failed | type=%s | error=%s",
                     job.id,
                     job.retry_count,
                     MAX_RETRIES,
+                    job.job_type,
                     job.error_message,
                 )
 
@@ -192,7 +210,6 @@ def run_worker() -> None:
         job_id = dequeue_job()
 
         if job_id is not None:
-            logger.info("Dequeued job_id=%d", job_id)
             process_job(job_id)
         else:
             # Queue is empty – wait a bit before polling again.

@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/test_worker.py
 ====================
 Day 13 – Tests for app/worker.py finite/testable functions.
@@ -25,6 +25,7 @@ Covers:
     - job that cannot be claimed is skipped (no state change)
 """
 
+import logging
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
@@ -217,6 +218,36 @@ class TestProcessJobSuccess:
         finally:
             _cleanup(None, jid)
 
+    def test_successful_job_logs_computation_duration(self, caplog: pytest.LogCaptureFixture):
+        """Worker logs computation duration with job_id and job_type on success."""
+        jid = self._run("matrix_stats", {"size": 5})
+        try:
+            with patch("app.worker.enqueue_job"), caplog.at_level(logging.INFO):
+                process_job(jid)
+            assert any(
+                f"job_id={jid}" in record.message
+                and "computation completed in" in record.message
+                and "matrix_stats" in record.message
+                for record in caplog.records
+            )
+        finally:
+            _cleanup(None, jid)
+
+    def test_claimed_job_logs_running_state(self, caplog: pytest.LogCaptureFixture):
+        """Worker logs claim and running state with job_id and job_type."""
+        jid = self._run("matrix_stats", {"size": 5})
+        try:
+            with patch("app.worker.enqueue_job"), caplog.at_level(logging.INFO):
+                process_job(jid)
+            assert any(
+                f"job_id={jid}" in record.message
+                and "claimed | queued → running" in record.message
+                and "type=matrix_stats" in record.message
+                for record in caplog.records
+            )
+        finally:
+            _cleanup(None, jid)
+
 
 # ---------------------------------------------------------------------------
 # process_job() – failure / retry path
@@ -266,12 +297,43 @@ class TestProcessJobFailureAndRetry:
         finally:
             _cleanup(None, jid)
 
+    def test_failed_job_logs_computation_duration(self, caplog: pytest.LogCaptureFixture):
+        """Worker logs computation failure with duration, job_id, and job_type."""
+        jid = self._make_job(retry_count=0)
+        try:
+            with patch("app.worker.enqueue_job"), caplog.at_level(logging.ERROR):
+                process_job(jid)
+            assert any(
+                f"job_id={jid}" in record.message
+                and "computation failed after" in record.message
+                and "unsupported_type" in record.message
+                for record in caplog.records
+            )
+        finally:
+            _cleanup(None, jid)
+
     def test_first_failure_reenqueues_job(self):
         jid = self._make_job(retry_count=0)
         try:
             with patch("app.worker.enqueue_job") as mock_enq:
                 process_job(jid)
             mock_enq.assert_called_once_with(jid)
+        finally:
+            _cleanup(None, jid)
+
+    def test_retry_logs_requeue_state(self, caplog: pytest.LogCaptureFixture):
+        """Worker logs retry attempt and re-enqueued state with job_id and job_type."""
+        jid = self._make_job(retry_count=0)
+        try:
+            with patch("app.worker.enqueue_job"), caplog.at_level(logging.INFO):
+                process_job(jid)
+            assert any(
+                f"job_id={jid}" in record.message
+                and "retry 1/3" in record.message
+                and "running → queued (re-enqueued)" in record.message
+                and "type=unsupported_type" in record.message
+                for record in caplog.records
+            )
         finally:
             _cleanup(None, jid)
 

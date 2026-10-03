@@ -1,13 +1,22 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, status
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import Base, engine, get_db
 from app.redis_client import redis_client
 from app.routers import jobs
 
-app = FastAPI(title="ComputeGrid")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(title="ComputeGrid", lifespan=lifespan)
 
 app.include_router(jobs.router)
 

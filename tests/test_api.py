@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/test_api.py
 =================
 API-level tests for ComputeGrid endpoints.
@@ -11,6 +11,8 @@ Coverage:
   - GET  /jobs/{job_id}
 """
 
+import logging
+import pytest
 from redis.exceptions import RedisError
 from fastapi.testclient import TestClient
 
@@ -119,6 +121,19 @@ class TestCreateJobEndpoint:
         response = client.post("/jobs", json=self._valid_payload)
         assert response.status_code == 500
         assert "enqueue" in response.json()["detail"].lower()
+
+    def test_create_job_logs_submission_latency(self, client: TestClient, mock_redis, caplog: pytest.LogCaptureFixture):
+        """Job submission should log execution latency with job_id and job_type."""
+        with caplog.at_level(logging.INFO):
+            response = client.post("/jobs", json=self._valid_payload)
+        assert response.status_code == 201
+        job_id = response.json()["id"]
+        assert any(
+            f"job_id={job_id}" in record.message
+            and "job submission completed in" in record.message
+            and "type=matrix_multiply" in record.message
+            for record in caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------

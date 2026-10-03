@@ -1,3 +1,6 @@
+import logging
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
@@ -7,6 +10,8 @@ from app.models import Job
 from app.queue import enqueue_job
 from app.schemas import JobCreate, JobResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(
     prefix="/jobs",
     tags=["jobs"],
@@ -15,6 +20,8 @@ router = APIRouter(
 
 @router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 def create_job(job_in: JobCreate, db: Session = Depends(get_db)):
+    start_time = time.perf_counter()
+
     job = Job(
         job_type=job_in.job_type,
         input_data=job_in.input_data,
@@ -26,10 +33,25 @@ def create_job(job_in: JobCreate, db: Session = Depends(get_db)):
     try:
         enqueue_job(job.id)
     except RedisError:
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        logger.error(
+            "job_id=%d | job submission failed to enqueue after %.2fms | type=%s",
+            job.id,
+            duration_ms,
+            job.job_type,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Job created in database but failed to enqueue in Redis",
         )
+
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    logger.info(
+        "job_id=%d | job submission completed in %.2fms | type=%s",
+        job.id,
+        duration_ms,
+        job.job_type,
+    )
 
     return job
 

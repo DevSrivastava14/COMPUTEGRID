@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/test_queue_recovery.py
 ============================
 Day 13 – Unit & integration tests for app/queue.py and app/recovery.py.
@@ -22,6 +22,7 @@ Recovery tests:
   - recover_stale_job is idempotent: returns False on a second call (job now "queued")
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -100,6 +101,14 @@ class TestEnqueueJob:
         with pytest.raises(RedisError):
             enqueue_job(1)
 
+    def test_enqueue_logs_job_id(self, mock_redis: MagicMock, caplog: pytest.LogCaptureFixture):
+        with caplog.at_level(logging.INFO):
+            enqueue_job(42)
+        assert any(
+            "job_id=42" in record.message and "enqueued to Redis queue" in record.message
+            for record in caplog.records
+        )
+
 
 class TestDequeueJob:
     def test_dequeue_returns_job_id_as_int(self, mock_redis: MagicMock):
@@ -122,6 +131,15 @@ class TestDequeueJob:
         mock_redis.lpop.side_effect = RedisError("down")
         with pytest.raises(RedisError):
             dequeue_job()
+
+    def test_dequeue_logs_job_id(self, mock_redis: MagicMock, caplog: pytest.LogCaptureFixture):
+        mock_redis.lpop.return_value = "42"
+        with caplog.at_level(logging.INFO):
+            dequeue_job()
+        assert any(
+            "job_id=42" in record.message and "dequeued from Redis queue" in record.message
+            for record in caplog.records
+        )
 
 
 class TestQueueKeyConstant:
@@ -286,6 +304,28 @@ class TestRecoverStaleJob:
             mock_redis.rpush.assert_called_once()
             _key, queued_id = mock_redis.rpush.call_args.args
             assert queued_id == str(job.id)
+        finally:
+            db_session.refresh(job)
+            _cleanup(db_session, job)
+
+    def test_recover_logs_stale_recovery(
+        self, db_session: Session, mock_redis: MagicMock, caplog: pytest.LogCaptureFixture
+    ):
+        job = _make_job(
+            db_session,
+            job_type="matrix_stats",
+            status="running",
+            started_at=_stale_started_at(),
+        )
+        try:
+            with caplog.at_level(logging.INFO):
+                recover_stale_job(db_session, job.id)
+            assert any(
+                f"job_id={job.id}" in record.message
+                and "recovered stale job" in record.message
+                and "type=matrix_stats" in record.message
+                for record in caplog.records
+            )
         finally:
             db_session.refresh(job)
             _cleanup(db_session, job)
