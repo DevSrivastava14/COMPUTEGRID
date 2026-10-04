@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ComputeGrid &mdash; Distributed Scientific Computing</title>
+  <meta name="description" content="Submit and monitor distributed scientific computation jobs." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:       hsl(224,32%,4%);
+      --bg-s:     hsl(224,28%,7%);
+      --bg-p:     hsl(224,26%,10%);
+      --bg-h:     hsl(224,24%,13%);
+      --bg-i:     hsl(224,24%,6%);
+      --cyan:     hsl(174,88%,52%);
+      --cyan-d:   hsl(174,65%,36%);
+      --cyan-g:   hsl(174deg 88% 52%/0.15);
+      --cyan-p:   hsl(174deg 88% 52%/0.07);
+      --cyan-bg:  hsl(174deg 60% 18%/0.5);
+      --indigo:   hsl(248,72%,66%);
+      --indigo-d: hsl(248,55%,50%);
+      --indigo-g: hsl(248deg 72% 66%/0.18);
+      --sapphire: hsl(214,82%,62%);
+      --ok:       hsl(145,65%,46%);
+      --ok-g:     hsl(145deg 65% 46%/0.2);
+      --warn:     hsl(38,92%,58%);
+      --err:      hsl(4,72%,58%);
+      --tx1:      hsl(212,28%,97%);
+      --tx2:      hsl(212,16%,68%);
+      --tx3:      hsl(212,12%,42%);
+      --bd:       hsl(224,20%,16%);
+      --bd-h:     hsl(224,20%,22%);
+      --r1:6px; --r2:12px; --r3:18px;
+      --sh: 0 4px 24px hsl(224deg 40% 2%/0.65),0 1px 3px hsl(224deg 40% 2%/0.4);
+      --gl: 0 0 40px hsl(174deg 88% 52%/0.1);
+      --e: cubic-bezier(.4,0,.2,1);
+      color-scheme:dark; accent-color:var(--cyan);
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--tx1);line-height:1.6;min-height:100dvh;overflow-x:hidden}
+    button,input{font:inherit;color:inherit}
+
+    /* Grid texture */
+    body::before{
+      content:'';position:fixed;inset:0;z-index:0;pointer-events:none;
+      background-image:
+        linear-gradient(hsl(224deg 20% 16%/0.5) 1px,transparent 1px),
+        linear-gradient(90deg,hsl(224deg 20% 16%/0.5) 1px,transparent 1px);
+      background-size:40px 40px;
+      mask-image:radial-gradient(ellipse 85% 85% at 50% 50%,black 20%,transparent 100%);
+      -webkit-mask-image:radial-gradient(ellipse 85% 85% at 50% 50%,black 20%,transparent 100%);
+    }
+
+    .orb{position:fixed;border-radius:50%;pointer-events:none;z-index:0;filter:blur(110px)}
+    .o1{width:680px;height:680px;top:-200px;left:-200px;background:radial-gradient(circle,hsl(174,78%,36%)0%,transparent 65%);opacity:.26;animation:dA 24s var(--e) infinite alternate}
+    .o2{width:560px;height:560px;bottom:-160px;right:-160px;background:radial-gradient(circle,hsl(248,62%,48%)0%,transparent 65%);opacity:.22;animation:dB 30s var(--e) infinite alternate}
+    .o3{width:320px;height:320px;top:45%;left:58%;background:radial-gradient(circle,hsl(214,72%,46%)0%,transparent 65%);opacity:.1;animation:dC 18s var(--e) infinite alternate}
+    @keyframes dA{from{transform:translate(0,0)scale(1)}to{transform:translate(50px,65px)scale(1.08)}}
+    @keyframes dB{from{transform:translate(0,0)scale(1)}to{transform:translate(-54px,-46px)scale(1.1)}}
+    @keyframes dC{from{transform:translate(0,0)scale(1)}to{transform:translate(28px,-38px)scale(1.06)}}
+
+    .shell{position:relative;z-index:1;display:grid;grid-template-rows:auto 1fr auto;min-height:100dvh}
+
+    /* Header */
+    header{display:flex;align-items:center;justify-content:space-between;padding:0 clamp(1.25rem,5vw,3rem);height:64px;border-bottom:1px solid var(--bd);background:hsl(224deg 32% 4%/0.78);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);position:sticky;top:0;z-index:100}
+    .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit}
+    .logo-mark{width:32px;height:32px;border-radius:8px;flex-shrink:0;background:conic-gradient(from 200deg,var(--cyan),var(--indigo),var(--cyan));display:flex;align-items:center;justify-content:center;box-shadow:0 0 20px var(--cyan-g);font-size:15px;line-height:1}
+    .logo-name{font-size:1rem;font-weight:700;letter-spacing:-.015em}
+    .logo-name em{font-style:normal;color:var(--cyan)}
+    .hdr-r{display:flex;align-items:center;gap:1rem}
+    .live{display:flex;align-items:center;gap:6px;padding:4px 11px;border-radius:20px;border:1px solid hsl(145deg 60% 32%/0.35);background:hsl(145deg 60% 11%/0.35);font-size:.72rem;font-weight:500;color:hsl(145,58%,65%)}
+    .live-d{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 5px var(--ok-g);animation:blink 2.8s ease-in-out infinite}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+    .hbadge{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--cyan-d);border:1px solid hsl(174deg 60% 30%/0.38);padding:2px 9px;border-radius:20px;background:hsl(174deg 60% 16%/0.18)}
+    @media(max-width:540px){.hbadge{display:none}}
+
+    /* Main */
+    main{padding:clamp(2rem,5vw,3.5rem) clamp(1.25rem,5vw,3rem);max-width:1200px;margin:0 auto;width:100%}
+
+    /* Hero */
+    .hero{margin-bottom:2.75rem}
+    .eyebrow{display:inline-flex;align-items:center;gap:8px;margin-bottom:.9rem;font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.14em;color:var(--cyan)}
+    .eyebrow-line{width:20px;height:1px;background:currentColor}
+    h1{font-size:clamp(1.85rem,4.5vw,3rem);font-weight:800;letter-spacing:-.035em;line-height:1.12;margin-bottom:.85rem}
+    .grad{background:linear-gradient(130deg,var(--cyan)0%,var(--indigo)100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+    .hero-sub{font-size:.95rem;color:var(--tx2);max-width:52ch;line-height:1.7}
+    .stats{display:flex;gap:1.5rem;margin-top:1.6rem;flex-wrap:wrap}
+    .stat{display:flex;flex-direction:column;gap:1px}
+    .stat-n{font-size:1.15rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--tx1)}
+    .stat-n .ac{color:var(--cyan)}
+    .stat-l{font-size:.63rem;font-weight:500;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3)}
+    .sdiv{width:1px;background:var(--bd);align-self:stretch;margin:0 .25rem}
+
+    /* Workbench */
+    .wb{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem;align-items:start}
+    @media(max-width:880px){.wb{grid-template-columns:1fr}}
+
+    /* Step label */
+    .slbl{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--tx3);margin-bottom:.8rem;display:flex;align-items:center;gap:8px}
+    .slbl::after{content:'';flex:1;height:1px;background:var(--bd)}
+
+    /* Card */
+    .card{background:var(--bg-s);border:1px solid var(--bd);border-radius:var(--r3);padding:1.5rem;box-shadow:var(--sh);transition:border-color 220ms var(--e),box-shadow 220ms var(--e)}
+    .card:hover{border-color:var(--bd-h);box-shadow:var(--sh),var(--gl)}
+    .card-hd{font-size:.85rem;font-weight:600;display:flex;align-items:center;gap:7px;margin-bottom:1.2rem;color:var(--tx1)}
+
+    /* Workload cards */
+    .wl-stack{display:flex;flex-direction:column;gap:.55rem}
+    .wl-card{position:relative;display:flex;align-items:center;gap:.85rem;padding:.9rem 1rem;border:1.5px solid var(--bd);border-radius:var(--r2);background:var(--bg-p);cursor:pointer;user-select:none;transition:border-color 220ms var(--e),background 220ms var(--e),transform 150ms var(--e),box-shadow 220ms var(--e)}
+    .wl-card input[type="radio"]{position:absolute;width:0;height:0;opacity:0}
+    .wl-card:hover{border-color:var(--cyan-d);background:var(--bg-h);transform:translateX(3px);box-shadow:-3px 0 0 0 var(--cyan-d)}
+    .wl-card.sel{border-color:var(--cyan);background:var(--cyan-bg);box-shadow:-4px 0 0 0 var(--cyan),0 0 28px var(--cyan-p)}
+    .wl-card:focus-within{outline:2px solid var(--cyan-d);outline-offset:2px}
+    .wl-ico{width:40px;height:40px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.05rem;font-weight:600;transition:background 220ms var(--e),box-shadow 220ms var(--e)}
+    .wl-ico.teal{background:hsl(174,55%,16%);color:var(--cyan)}
+    .wl-ico.purple{background:hsl(248,48%,18%);color:var(--indigo)}
+    .wl-ico.blue{background:hsl(214,55%,16%);color:var(--sapphire)}
+    .wl-card.sel .wl-ico.teal{background:hsl(174,58%,20%);box-shadow:0 0 14px var(--cyan-g)}
+    .wl-card.sel .wl-ico.purple{background:hsl(248,50%,22%);box-shadow:0 0 14px var(--indigo-g)}
+    .wl-card.sel .wl-ico.blue{background:hsl(214,55%,20%);box-shadow:0 0 12px hsl(214deg 82% 62%/0.2)}
+    .wl-body{flex:1;min-width:0}
+    .wl-name{font-size:.85rem;font-weight:600;color:var(--tx1)}
+    .wl-desc{font-size:.73rem;color:var(--tx3);margin-top:2px;line-height:1.45}
+    .wl-meta{display:flex;align-items:center;gap:6px;margin-top:4px}
+    .wl-chip{font-family:'JetBrains Mono',monospace;font-size:.6rem;color:var(--cyan);background:hsl(174deg 60% 15%/0.55);border:1px solid hsl(174deg 60% 24%/0.4);border-radius:4px;padding:1px 6px}
+    .wl-est{font-size:.6rem;color:var(--tx3);font-family:'JetBrains Mono',monospace}
+    .wl-radio{width:16px;height:16px;border-radius:50%;flex-shrink:0;border:1.5px solid var(--bd-h);display:flex;align-items:center;justify-content:center;transition:border-color 220ms var(--e)}
+    .wl-radio::after{content:'';width:7px;height:7px;border-radius:50%;background:var(--cyan);opacity:0;transition:opacity 150ms var(--e)}
+    .wl-card.sel .wl-radio{border-color:var(--cyan)}
+    .wl-card.sel .wl-radio::after{opacity:1}
+
+    /* Context chip */
+    .ctx-chip{display:flex;align-items:center;gap:8px;padding:.55rem .85rem;background:var(--bg-i);border:1px solid var(--bd);border-radius:var(--r1);margin-bottom:1.1rem}
+    .ctx-dot{width:7px;height:7px;border-radius:50%;background:var(--cyan);box-shadow:0 0 7px var(--cyan-g);flex-shrink:0}
+    .ctx-text{font-size:.74rem;color:var(--tx2)}
+    .ctx-val{font-family:'JetBrains Mono',monospace;font-size:.74rem;font-weight:600;color:var(--cyan);margin-left:2px}
+
+    /* Fields */
+    .fields{display:flex;flex-direction:column;gap:1.1rem}
+    .field{display:flex;flex-direction:column;gap:5px}
+    .field>label{font-size:.74rem;font-weight:500;color:var(--tx2);display:flex;justify-content:space-between;align-items:baseline}
+    .f-hint{font-size:.65rem;font-weight:400;color:var(--tx3)}
+    input[type="number"]{width:100%;padding:.55rem .8rem;background:var(--bg-p);border:1.5px solid var(--bd);border-radius:var(--r1);color:var(--tx1);font-family:'JetBrains Mono',monospace;font-size:.88rem;outline:none;appearance:textfield;-moz-appearance:textfield;transition:border-color 220ms var(--e),box-shadow 220ms var(--e)}
+    input[type="number"]::-webkit-outer-spin-button,input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none}
+    input[type="number"]:hover:not(:focus){border-color:var(--bd-h)}
+    input[type="number"]:focus{border-color:var(--cyan-d);box-shadow:0 0 0 3px hsl(174deg 80% 50%/0.12)}
+    .slider-row{display:flex;align-items:center;gap:10px}
+    input[type="range"]{flex:1;cursor:pointer;outline:none;border:none;height:4px}
+    .slider-val{font-family:'JetBrains Mono',monospace;font-size:.78rem;font-weight:500;color:var(--cyan);min-width:4.5ch;text-align:right}
+    .slider-ticks{display:flex;justify-content:space-between;padding:0 1px}
+    .slider-ticks span{font-size:.6rem;color:var(--tx3);font-family:'JetBrains Mono',monospace}
+
+    /* Callout */
+    .callout{display:flex;gap:9px;background:hsl(174deg 40% 8%/0.5);border:1px solid hsl(174deg 40% 20%/0.4);border-radius:var(--r1);padding:.7rem .85rem;margin-top:1.1rem}
+    .callout-i{font-size:.8rem;flex-shrink:0;margin-top:1px}
+    .callout-b{font-size:.72rem;color:var(--tx2);line-height:1.55}
+    .callout-b strong{color:var(--cyan);font-weight:500}
+
+    /* Submit */
+    .submit-btn{width:100%;padding:.82rem 1.5rem;border:none;border-radius:var(--r2);background:linear-gradient(135deg,hsl(174,68%,34%)0%,hsl(174,80%,44%)100%);color:hsl(224,32%,4%);font-family:'Inter',sans-serif;font-size:.88rem;font-weight:700;cursor:pointer;position:relative;overflow:hidden;transition:transform 150ms var(--e),box-shadow 220ms var(--e),filter 220ms var(--e);margin-top:1.5rem}
+    .submit-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,hsl(174deg 88% 52%/0.18),transparent);opacity:0;transition:opacity 220ms var(--e)}
+    .submit-btn:hover{transform:translateY(-2px);box-shadow:0 8px 30px hsl(174deg 80% 44%/0.36);filter:brightness(1.08)}
+    .submit-btn:hover::before{opacity:1}
+    .submit-btn:active{transform:none;box-shadow:0 2px 8px hsl(174deg 80% 44%/0.22)}
+    .submit-btn:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+    .submit-btn:disabled{opacity:.6;cursor:not-allowed;transform:none;box-shadow:none}
+    .btn-inner{display:flex;align-items:center;justify-content:center;gap:7px;pointer-events:none}
+    .submit-hint{font-size:.68rem;color:var(--tx3);text-align:center;margin-top:.55rem;line-height:1.45}
+
+    /* Right col */
+    .right-col{display:flex;flex-direction:column;gap:1rem}
+
+    /* Status panel */
+    .sp{background:var(--bg-s);border:1px solid var(--bd);border-radius:var(--r3);overflow:hidden;box-shadow:var(--sh);transition:border-color 220ms var(--e),box-shadow 220ms var(--e)}
+    .sp:hover{border-color:var(--bd-h);box-shadow:var(--sh),var(--gl)}
+    .sp-hd{display:flex;align-items:center;padding:1rem 1.4rem;border-bottom:1px solid var(--bd);gap:.75rem}
+    .sp-title{font-size:.85rem;font-weight:600;flex:1}
+    .sbadge{font-size:.64rem;font-weight:600;font-family:'JetBrains Mono',monospace;padding:2px 9px;border-radius:20px;background:var(--bg-p);border:1px solid var(--bd);color:var(--tx3);transition:all 220ms var(--e)}
+    .sbadge.s-q{color:var(--warn);border-color:hsl(38deg 80% 42%/0.4);background:hsl(38deg 80% 11%/0.5)}
+    .sbadge.s-r{color:var(--sapphire);border-color:hsl(214deg 70% 42%/0.4);background:hsl(214deg 70% 11%/0.5)}
+    .sbadge.s-ok{color:var(--ok);border-color:hsl(145deg 55% 32%/0.4);background:hsl(145deg 55% 10%/0.5)}
+    .sbadge.s-err{color:var(--err);border-color:hsl(4deg 60% 42%/0.4);background:hsl(4deg 60% 11%/0.5)}
+
+    .empty-st{min-height:230px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.85rem;padding:2.5rem;text-align:center}
+    .empty-ico{width:58px;height:58px;border-radius:var(--r2);background:var(--bg-p);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:1.5rem}
+    .empty-ttl{font-size:.86rem;font-weight:600;color:var(--tx2)}
+    .empty-sub{font-size:.73rem;color:var(--tx3);max-width:27ch;line-height:1.55}
+    .empty-dots{display:flex;gap:5px;margin-top:.15rem}
+    .empty-dots span{width:5px;height:5px;border-radius:50%}
+    .empty-dots span:nth-child(1){background:hsl(174,50%,20%)}
+    .empty-dots span:nth-child(2){background:hsl(174,40%,15%)}
+    .empty-dots span:nth-child(3){background:hsl(174,30%,11%)}
+
+    #result-grid{display:none}
+    .rcells{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:1px;background:var(--bd)}
+    .rcell{background:var(--bg-s);padding:1.1rem 1.3rem}
+    .rc-lbl{font-size:.63rem;font-weight:500;text-transform:uppercase;letter-spacing:.09em;color:var(--tx3);margin-bottom:3px}
+    .rc-val{font-size:1.15rem;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--tx1);line-height:1.2}
+    .rc-val.arr{font-size:.82rem;color:var(--cyan)}
+
+    .jmeta{display:none;flex-wrap:wrap;padding:.85rem 1.4rem;gap:1.25rem;border-top:1px solid var(--bd)}
+    .mc .ml{font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:1px}
+    .mc .mv{font-size:.8rem;font-family:'JetBrains Mono',monospace;color:var(--tx2)}
+    .mc .mv.ac{color:var(--cyan)}
+
+    /* Output fields panel */
+    .out-panel{background:var(--bg-s);border:1px solid var(--bd);border-radius:var(--r3);padding:1.35rem;box-shadow:var(--sh);transition:border-color 220ms var(--e),box-shadow 220ms var(--e)}
+    .out-panel:hover{border-color:var(--bd-h);box-shadow:var(--sh),var(--gl)}
+    .out-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:.15rem}
+    .out-tag{font-size:.65rem;font-family:'JetBrains Mono',monospace;color:var(--tx3);background:var(--bg-p);border:1px solid var(--bd);border-radius:4px;padding:2px 7px;transition:color 220ms var(--e),border-color 220ms var(--e)}
+    .out-note{font-size:.68rem;color:var(--tx3);margin-top:.75rem;line-height:1.55}
+    .out-note code{font-family:'JetBrains Mono',monospace;font-size:.65rem;color:var(--cyan)}
+
+    /* Arch band */
+    .arch-band{background:var(--bg-s);border:1px solid var(--bd);border-radius:var(--r3);padding:1.2rem 1.5rem;box-shadow:var(--sh)}
+    .arch-flow{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:.68rem;font-family:'JetBrains Mono',monospace;color:var(--tx3)}
+    .an{padding:3px 8px;border-radius:5px;background:var(--bg-p);border:1px solid var(--bd);color:var(--tx2)}
+    .an.hl{color:var(--cyan);border-color:hsl(174deg 60% 25%/0.45);background:hsl(174deg 55% 12%/0.5)}
+    .aa{color:var(--tx3);padding:0 1px}
+
+    /* Footer */
+    footer{padding:1rem clamp(1.25rem,5vw,3rem);border-top:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+    .ft-t{font-size:.7rem;color:var(--tx3)}
+    .ft-links{display:flex;gap:1rem}
+    .ft-link{font-size:.7rem;color:var(--tx3);text-decoration:none;transition:color 220ms var(--e)}
+    .ft-link:hover{color:var(--cyan)}
+    .sr-only{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
+  </style>
+</head>
+<body>
+<div class="orb o1" aria-hidden="true"></div>
+<div class="orb o2" aria-hidden="true"></div>
+<div class="orb o3" aria-hidden="true"></div>
+
+<div class="shell">
+
+<header role="banner">
+  <a href="/" class="logo" aria-label="ComputeGrid home">
+    <div class="logo-mark" aria-hidden="true">&#x2B21;</div>
+    <span class="logo-name">Compute<em>Grid</em></span>
+  </a>
+  <div class="hdr-r">
+    <div class="live"><span class="live-d" aria-hidden="true"></span>API Online</div>
+    <span class="hbadge">v1.0 &middot; Python 3.13</span>
+  </div>
+</header>
+
+<main role="main">
+
+  <!-- Hero -->
+  <section class="hero" aria-labelledby="h1">
+    <div class="eyebrow" aria-hidden="true"><span class="eyebrow-line"></span>Distributed Scientific Computing</div>
+    <h1 id="h1">Submit a <span class="grad">Computation</span></h1>
+    <p class="hero-sub">Select a workload, configure parameters, and dispatch it to the distributed worker grid. Jobs are queued in Redis, executed by NumPy workers, and results persisted in PostgreSQL.</p>
+    <div class="stats" aria-label="Platform statistics">
+      <div class="stat"><span class="stat-n"><span class="ac">3</span></span><span class="stat-l">Workload Types</span></div>
+      <div class="sdiv" aria-hidden="true"></div>
+      <div class="stat"><span class="stat-n">117</span><span class="stat-l">Passing Tests</span></div>
+      <div class="sdiv" aria-hidden="true"></div>
+      <div class="stat"><span class="stat-n"><span class="ac">&#x221E;</span></span><span class="stat-l">Concurrent Workers</span></div>
+      <div class="sdiv" aria-hidden="true"></div>
+      <div class="stat"><span class="stat-n">3</span><span class="stat-l">Auto Retries</span></div>
+    </div>
+  </section>
+
+  <!-- Workbench -->
+  <div class="wb">
+
+    <!-- LEFT -->
+    <div>
+      <form id="job-form" novalidate aria-label="Job submission form">
+
+        <!-- Step 1 -->
+        <section aria-labelledby="s1lbl">
+          <p id="s1lbl" class="slbl">01 &mdash; Select Workload</p>
+          <fieldset style="border:none;padding:0;margin:0;">
+            <legend class="sr-only">Computational workload type</legend>
+            <div class="wl-stack" role="radiogroup" aria-labelledby="s1lbl">
+
+              <label class="wl-card sel" for="wl-ms">
+                <input type="radio" id="wl-ms" name="workload" value="matrix_stats" checked />
+                <div class="wl-ico teal" aria-hidden="true">&#x229E;</div>
+                <div class="wl-body">
+                  <div class="wl-name">Matrix Statistics</div>
+                  <div class="wl-desc">Generate a random N&times;N matrix. Compute mean, std, min, max, sum via NumPy.</div>
+                  <div class="wl-meta"><span class="wl-chip">matrix_stats</span><span class="wl-est">~&lt;50ms @ N=100</span></div>
+                </div>
+                <div class="wl-radio" aria-hidden="true"></div>
+              </label>
+
+              <label class="wl-card" for="wl-mm">
+                <input type="radio" id="wl-mm" name="workload" value="matrix_multiply" />
+                <div class="wl-ico purple" aria-hidden="true">&#x2297;</div>
+                <div class="wl-body">
+                  <div class="wl-name">Matrix Multiplication</div>
+                  <div class="wl-desc">Multiply two random N&times;N matrices with numpy.matmul for compute-intensive workloads.</div>
+                  <div class="wl-meta"><span class="wl-chip">matrix_multiply</span><span class="wl-est">~&lt;200ms @ N=100</span></div>
+                </div>
+                <div class="wl-radio" aria-hidden="true"></div>
+              </label>
+
+              <label class="wl-card" for="wl-ds">
+                <input type="radio" id="wl-ds" name="workload" value="data_stats" />
+                <div class="wl-ico blue" aria-hidden="true">&asymp;</div>
+                <div class="wl-body">
+                  <div class="wl-name">Data Statistics</div>
+                  <div class="wl-desc">Compute descriptive statistics over a 1D random dataset, including median.</div>
+                  <div class="wl-meta"><span class="wl-chip">data_stats</span><span class="wl-est">~&lt;20ms @ N=1k</span></div>
+                </div>
+                <div class="wl-radio" aria-hidden="true"></div>
+              </label>
+
+            </div>
+          </fieldset>
+        </section>
+
+        <!-- Step 2 -->
+        <section aria-labelledby="s2lbl" style="margin-top:1.75rem;">
+          <p id="s2lbl" class="slbl">02 &mdash; Configure Parameters</p>
+          <div class="card">
+            <div class="card-hd"><span aria-hidden="true">&#x2699;</span>Job Parameters</div>
+            <div class="ctx-chip" aria-live="polite" aria-label="Selected workload">
+              <div class="ctx-dot" aria-hidden="true"></div>
+              <span class="ctx-text">Workload:</span>
+              <span class="ctx-val" id="ctx-wl">matrix_stats</span>
+            </div>
+            <div class="fields" id="input-area"></div>
+          </div>
+        </section>
+
+        <!-- Step 3 -->
+        <section aria-labelledby="s3lbl" style="margin-top:1.75rem;">
+          <p id="s3lbl" class="slbl">03 &mdash; Dispatch Job</p>
+          <button id="btn-submit" type="submit" class="submit-btn">
+            <span class="btn-inner"><span aria-hidden="true">&#9654;</span>Submit Job</span>
+          </button>
+          <p class="submit-hint">Job will be queued in Redis and claimed atomically by an available worker process.</p>
+        </section>
+
+      </form>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right-col">
+      <p class="slbl">Results &amp; Job Status</p>
+
+      <div class="sp">
+        <div class="sp-hd">
+          <span class="sp-title">Latest Job</span>
+          <span class="sbadge" id="sbadge" aria-live="polite">&mdash;</span>
+        </div>
+        <div id="empty-state" class="empty-st" role="status" aria-label="No jobs submitted yet">
+          <div class="empty-ico" aria-hidden="true">&#9678;</div>
+          <p class="empty-ttl">No jobs submitted yet</p>
+          <p class="empty-sub">Configure a workload and click Submit&nbsp;Job to dispatch your first computation.</p>
+          <div class="empty-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+        </div>
+        <div id="result-grid"><div class="rcells" id="rcells" aria-label="Computation results"></div></div>
+        <div class="jmeta" id="jmeta">
+          <div class="mc"><div class="ml">Job ID</div><div class="mv" id="m-id">&mdash;</div></div>
+          <div class="mc"><div class="ml">Workload</div><div class="mv ac" id="m-type">&mdash;</div></div>
+          <div class="mc"><div class="ml">Size (N)</div><div class="mv" id="m-size">&mdash;</div></div>
+          <div class="mc"><div class="ml">Submitted</div><div class="mv" id="m-time">&mdash;</div></div>
+        </div>
+      </div>
+
+      <div class="out-panel">
+        <div class="card-hd" style="margin-bottom:.8rem;"><span aria-hidden="true">&#9672;</span>Expected Result Fields</div>
+        <div class="out-tags" id="out-tags" aria-label="Expected output fields"></div>
+        <p class="out-note">Results stored as JSONB in PostgreSQL after computation. Poll <code>GET&nbsp;/jobs/{id}</code> for live status.</p>
+      </div>
+
+      <div class="arch-band">
+        <div class="card-hd" style="margin-bottom:.8rem;"><span aria-hidden="true">&#x2B21;</span>Pipeline</div>
+        <div class="arch-flow" aria-label="Job processing pipeline">
+          <span class="an hl">POST /jobs</span><span class="aa">&rarr;</span>
+          <span class="an">PostgreSQL</span><span class="aa">&rarr;</span>
+          <span class="an">Redis queue</span><span class="aa">&rarr;</span>
+          <span class="an hl">Worker</span><span class="aa">&rarr;</span>
+          <span class="an">NumPy</span><span class="aa">&rarr;</span>
+          <span class="an">PostgreSQL</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer role="contentinfo">
+  <span class="ft-t">ComputeGrid &middot; FastAPI + PostgreSQL + Redis &middot; Python 3.13</span>
+  <nav class="ft-links" aria-label="API links">
+    <a href="/docs"         class="ft-link" target="_blank" rel="noopener noreferrer">Swagger</a>
+    <a href="/health"       class="ft-link" target="_blank" rel="noopener noreferrer">Health</a>
+    <a href="/health/db"    class="ft-link" target="_blank" rel="noopener noreferrer">DB</a>
+    <a href="/health/redis" class="ft-link" target="_blank" rel="noopener noreferrer">Redis</a>
+  </nav>
+</footer>
+
+</div>
+
+<script>
+'use strict';
+const WL={
+  matrix_stats:{label:'Matrix Statistics',desc:'Generates a random N\u00D7N matrix and returns summary statistics via NumPy.',outputs:['shape','mean','std','min','max','sum'],fields:[{id:'size',label:'Matrix Size (N)',hint:'Dimension of the N\u00D7N square matrix',min:10,max:2000,step:10,def:100,ticks:['10','500','1k','2k']}]},
+  matrix_multiply:{label:'Matrix Multiplication',desc:'Multiplies two random N\u00D7N matrices with numpy.matmul.',outputs:['shape','mean','std','min','max'],fields:[{id:'size',label:'Matrix Size (N)',hint:'Dimension of the N\u00D7N matrices',min:10,max:1000,step:10,def:100,ticks:['10','250','500','1k']}]},
+  data_stats:{label:'Data Statistics',desc:'Computes descriptive statistics over a 1D random dataset, including median.',outputs:['size','mean','std','min','max','sum','median'],fields:[{id:'size',label:'Dataset Size',hint:'Number of elements in the 1D dataset',min:100,max:1000000,step:100,def:1000,ticks:['100','250k','500k','1M']}]}
+};
+let cur='matrix_stats';
+const $=s=>document.querySelector(s);
+const fmt=n=>{const v=Number(n);if(v>=1e6)return(v/1e6).toFixed(2)+' M';if(v>=1e3)return v.toLocaleString('en');return String(v)};
+const now=()=>new Date().toLocaleTimeString('en',{hour12:false});
+
+function renderInputs(k){
+  const area=$('#input-area');area.innerHTML='';
+  WL[k].fields.forEach(f=>{
+    const w=document.createElement('div');w.className='field';
+    const lbl=document.createElement('label');
+    lbl.setAttribute('for','f-'+f.id+'-num');
+    lbl.innerHTML=f.label+' <span class="f-hint">'+f.hint+'</span>';
+    w.appendChild(lbl);
+    const row=document.createElement('div');row.className='slider-row';
+    const rng=document.createElement('input');
+    rng.type='range';rng.id='f-'+f.id;rng.min=f.min;rng.max=f.max;rng.step=f.step;rng.value=f.def;
+    rng.setAttribute('aria-label',f.label+' slider');
+    rng.setAttribute('aria-valuenow',f.def);rng.setAttribute('aria-valuemin',f.min);rng.setAttribute('aria-valuemax',f.max);
+    const vsp=document.createElement('span');vsp.className='slider-val';vsp.id='f-'+f.id+'-val';
+    vsp.setAttribute('aria-hidden','true');vsp.textContent=fmt(f.def);
+    row.appendChild(rng);row.appendChild(vsp);w.appendChild(row);
+    const tks=document.createElement('div');tks.className='slider-ticks';tks.setAttribute('aria-hidden','true');
+    f.ticks.forEach(t=>{const s=document.createElement('span');s.textContent=t;tks.appendChild(s)});
+    w.appendChild(tks);
+    const num=document.createElement('input');
+    num.type='number';num.id='f-'+f.id+'-num';num.name=f.id;
+    num.min=f.min;num.max=f.max;num.step=f.step;num.value=f.def;
+    num.setAttribute('aria-label',f.label+' exact value');num.style.marginTop='6px';
+    w.appendChild(num);
+    rng.addEventListener('input',()=>{vsp.textContent=fmt(rng.value);num.value=rng.value;rng.setAttribute('aria-valuenow',rng.value)});
+    num.addEventListener('input',()=>{const v=Math.max(f.min,Math.min(f.max,Number(num.value)||f.def));rng.value=v;vsp.textContent=fmt(v);rng.setAttribute('aria-valuenow',v)});
+    area.appendChild(w);
+  });
+  const cl=document.createElement('div');cl.className='callout';cl.setAttribute('role','note');
+  cl.innerHTML='<span class="callout-i" aria-hidden="true">&#x2139;</span><p class="callout-b">'+WL[k].desc+' Results stored as <strong>JSONB</strong> in PostgreSQL.</p>';
+  area.appendChild(cl);
+}
+
+function renderTags(k){
+  const c=$('#out-tags');c.innerHTML='';
+  WL[k].outputs.forEach(f=>{const t=document.createElement('span');t.className='out-tag';t.textContent=f;c.appendChild(t)});
+}
+
+function switchWL(k){
+  cur=k;$('#ctx-wl').textContent=k;renderInputs(k);renderTags(k);
+  document.querySelectorAll('.wl-card').forEach(c=>{c.classList.toggle('sel',c.querySelector('input[type="radio"]').value===k)});
+}
+
+let pollTimer = null;
+
+function stopPolling(){
+  if(pollTimer){
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function restoreSubmitBtn(){
+  const btn = $('#btn-submit');
+  if(btn){
+    btn.disabled = false;
+    btn.querySelector('.btn-inner').innerHTML = '<span aria-hidden="true">&#9654;</span> Submit Job';
+  }
+}
+
+function renderJobResult(result){
+  const rc = $('#rcells');
+  rc.innerHTML = '';
+  if(result && typeof result === 'object'){
+    Object.entries(result).forEach(([k, v])=>{
+      const cell = document.createElement('div');
+      cell.className = 'rcell';
+      const isArr = Array.isArray(v);
+      const valStr = isArr ? `[${v.join(', ')}]` : (typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : String(v));
+      cell.innerHTML = `<div class="rc-lbl">${k}</div><div class="rc-val${isArr ? ' arr' : ''}">${valStr}</div>`;
+      rc.appendChild(cell);
+    });
+  }
+  $('#result-grid').style.display = 'block';
+}
+
+function renderJobError(errMsg){
+  const rc = $('#rcells');
+  rc.innerHTML = `<div class="rcell" style="grid-column:1/-1;"><div class="rc-lbl">Error Message</div><div class="rc-val" style="color:var(--err);font-size:.85rem;">${errMsg || 'Computation failed'}</div></div>`;
+  $('#result-grid').style.display = 'block';
+}
+
+function updateJobState(job, size){
+  const badge = $('#sbadge');
+  $('#empty-state').style.display = 'none';
+  const jm = $('#jmeta');
+  jm.style.display = 'flex';
+  $('#m-id').textContent = '#' + job.id;
+  $('#m-type').textContent = job.job_type || cur;
+  if(size) $('#m-size').textContent = fmt(size);
+
+  const status = (job.status || 'queued').toLowerCase();
+
+  if(status === 'queued'){
+    badge.textContent = 'queued';
+    badge.className = 'sbadge s-q';
+    $('#result-grid').style.display = 'none';
+  }else if(status === 'running'){
+    badge.textContent = 'running';
+    badge.className = 'sbadge s-r';
+    $('#result-grid').style.display = 'none';
+  }else if(status === 'completed'){
+    badge.textContent = 'completed';
+    badge.className = 'sbadge s-ok';
+    renderJobResult(job.result);
+    stopPolling();
+    restoreSubmitBtn();
+  }else if(status === 'failed'){
+    badge.textContent = 'failed';
+    badge.className = 'sbadge s-err';
+    renderJobError(job.error_message);
+    stopPolling();
+    restoreSubmitBtn();
+  }
+}
+
+function startPolling(jobId, size){
+  stopPolling();
+  pollTimer = setInterval(async ()=>{
+    try{
+      const res = await fetch('/jobs/' + jobId);
+      if(!res.ok){
+        throw new Error('HTTP ' + res.status);
+      }
+      const job = await res.json();
+      updateJobState(job, size);
+    }catch(err){
+      stopPolling();
+      restoreSubmitBtn();
+      const badge = $('#sbadge');
+      badge.textContent = 'error';
+      badge.className = 'sbadge s-err';
+      renderJobError(err.message);
+    }
+  }, 1000);
+}
+
+function setJobInitialError(errMsg, type, size){
+  stopPolling();
+  const badge = $('#sbadge');
+  badge.textContent = 'error';
+  badge.className = 'sbadge s-err';
+  $('#empty-state').style.display = 'none';
+  const jm = $('#jmeta');
+  jm.style.display = 'flex';
+  $('#m-id').textContent = 'Failed';
+  $('#m-type').textContent = type || cur;
+  $('#m-size').textContent = size ? fmt(size) : '\u2014';
+  $('#m-time').textContent = now();
+  renderJobError(errMsg);
+  restoreSubmitBtn();
+}
+
+$('#job-form').addEventListener('submit', async e=>{
+  e.preventDefault();
+  stopPolling();
+
+  const ne = $('#f-size-num') || $('#f-size');
+  const size = Number(ne?.value || (cur === 'data_stats' ? 1000 : 100));
+
+  let input_data = {};
+  if(cur === 'matrix_stats'){
+    input_data = {matrix_size: size};
+  }else if(cur === 'matrix_multiply'){
+    const iters = Number($('#f-iterations-num')?.value || $('#f-iterations')?.value || 1);
+    input_data = {matrix_size: size, iterations: iters};
+  }else if(cur === 'data_stats'){
+    input_data = {dataset_size: size};
+  }
+
+  const payload = {job_type: cur, input_data: input_data};
+  const btn = $('#btn-submit');
+  btn.disabled = true;
+  btn.querySelector('.btn-inner').innerHTML = '<span aria-hidden="true">&#x23F3;</span> Submitting\u2026';
+
+  // Clear previous results & reset status view for the new job
+  $('#rcells').innerHTML = '';
+  $('#result-grid').style.display = 'none';
+  $('#empty-state').style.display = 'none';
+  const badge = $('#sbadge');
+  badge.textContent = 'queued';
+  badge.className = 'sbadge s-q';
+  const jm = $('#jmeta');
+  jm.style.display = 'flex';
+  $('#m-id').textContent = '\u2014';
+  $('#m-type').textContent = cur;
+  $('#m-size').textContent = fmt(size);
+  $('#m-time').textContent = now();
+
+  try{
+    const res = await fetch('/jobs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok){
+      throw new Error('HTTP ' + res.status);
+    }
+    const job = await res.json();
+    btn.querySelector('.btn-inner').innerHTML = '<span aria-hidden="true">&#x23F3;</span> Processing\u2026';
+    updateJobState(job, size);
+    startPolling(job.id, size);
+  }catch(err){
+    setJobInitialError(err.message, cur, size);
+  }
+});
+
+document.querySelectorAll('input[name="workload"]').forEach(r=>{r.addEventListener('change',()=>{if(r.checked)switchWL(r.value)})});
+switchWL('matrix_stats');
+</script>
+</body>
+</html>

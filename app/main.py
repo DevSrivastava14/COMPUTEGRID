@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.staticfiles import StaticFiles
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -42,3 +43,6 @@ def health_check_redis():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Redis is unreachable",
         )
+
+
+app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
